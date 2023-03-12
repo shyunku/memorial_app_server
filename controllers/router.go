@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"memorial_app_server/configs"
 	"memorial_app_server/controllers/v1"
@@ -19,7 +20,12 @@ func SetupRouter() *gin.Engine {
 	// initialize oauth
 	v1.InitializeGoogleOauth()
 
+	// setting cors
+	config := cors.DefaultConfig()
+	config.AllowOrigins = []string{"*"}
+
 	r := gin.Default()
+	r.Use(cors.New(config))
 	r.GET("/ping", ping)
 
 	v1.UseRouterV1(r)

@@ -7,6 +7,7 @@ import (
 	MemJson "memorial_app_server/libs/json"
 	"memorial_app_server/libs/math"
 	MemStrings "memorial_app_server/libs/strings"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,7 +50,8 @@ func NewBaseLoggerWithoutLabel() BaseLogger {
 
 func (bl *BaseLogger) Write(p []byte) (n int, err error) {
 	str := string(p[:])
-	str = strings.ReplaceAll(str, "\n", " ")
+	reg := regexp.MustCompile(`(\n\n+)|(\s+)$`)
+	str = reg.ReplaceAllString(str, "")
 	str = strings.ReplaceAll(str, "\r", "")
 	bl.preComposeLog(NIL, MemJson.PrettyMarshal, false, str)
 	return len(p), nil

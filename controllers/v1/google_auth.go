@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"io"
 	"memorial_app_server/database"
+	json2 "memorial_app_server/libs/json"
 	"memorial_app_server/log"
 	"net/http"
 	"os"
@@ -56,7 +58,7 @@ func GoogleOauth2Login(c *gin.Context) {
 	// save token to session
 	c.SetCookie("oauthstate", stateToken, 0, "/", "", false, true)
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate") // Set Cache-Control header
-	url := config.AuthCodeURL(stateToken)
+	url := config.AuthCodeURL(stateToken, oauth2.AccessTypeOffline)
 	// redirect to Google's consent page to ask for permission
 	c.Redirect(http.StatusMovedPermanently, url)
 }
@@ -80,6 +82,7 @@ func GoogleOauth2Callback(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+
 	response, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
 	if err != nil {
 		log.Error(err)
@@ -106,6 +109,7 @@ func GoogleOauth2Callback(c *gin.Context) {
 	// create user if not exist
 	var userEntity database.UserEntity
 	var user *userDto
+	var googleAuthResult googleAuthResultDto
 	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleOauthUserInfo.Id)
 	err = result.StructScan(&userEntity)
 	if err != nil {
@@ -125,18 +129,21 @@ func GoogleOauth2Callback(c *gin.Context) {
 				GoogleAuthId: googleOauthUserInfo.Id,
 				GoogleEmail:  googleOauthUserInfo.Email,
 			}
+			googleAuthResult.NewlySignedUp = true
 		} else {
 			log.Error(err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 	} else {
+		// user already exists on DB
 		user = &userDto{
 			UserId:       *userEntity.UserId,
 			AuthId:       *userEntity.GoogleEmail,
 			GoogleAuthId: *userEntity.GoogleAuthId,
 			GoogleEmail:  *userEntity.GoogleEmail,
 		}
+		googleAuthResult.NewlySignedUp = false
 	}
 
 	if user == nil {
@@ -151,9 +158,31 @@ func GoogleOauth2Callback(c *gin.Context) {
 		return
 	}
 
-	log.Debug("user:", user)
+	googleAuthResult.User = user
+	googleAuthResult.Auth = NewAuthTokenDto(token.AccessToken, token.RefreshToken, token.Expiry.Unix())
 
-	c.JSON(http.StatusOK, user)
+	// Send a message to the client's window object
+	marshaled, err := json2.Marshal(googleAuthResult)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	log.Debug("Marshaled:", marshaled)
+	log.Debug("Original:", googleAuthResult)
+
+	script := fmt.Sprintf(`<script>
+		try {
+			const data = JSON.parse('%s');
+			window.opener.postMessage({type: "google_oauth_callback_result", data, success: true}, '*');
+		} catch (e) {
+			window.opener.postMessage({type: "google_oauth_callback_result", data, success: false}, '*');
+		} finally {
+			window.close();
+		}
+	</script>`, marshaled)
+	c.Data(http.StatusOK, "text/html", []byte(script))
 }
 
 func createGoogleOauthState() string {
