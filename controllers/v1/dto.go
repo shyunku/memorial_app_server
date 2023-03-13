@@ -3,18 +3,33 @@ package v1
 import "errors"
 
 type userDto struct {
-	UserId       string `json:"uid"`
-	AuthId       string `json:"auth_id"`
-	GoogleAuthId string `json:"google_auth_id"`
-	GoogleEmail  string `json:"google_email"`
+	UserId                string  `json:"uid"`
+	Username              *string `json:"username"`
+	AuthId                *string `json:"auth_id"`
+	ProfileImageUrl       *string `json:"profile_image_url"`
+	GoogleAuthId          *string `json:"google_auth_id"`
+	GoogleEmail           *string `json:"google_email"`
+	GoogleProfileImageUrl *string `json:"google_profile_image_url"`
+}
+
+func NewUserDto(userId string, username, authId, profileImageUrl, googleAuthId, googleEmail, googleProfileImageUrl *string) *userDto {
+	return &userDto{
+		UserId:                userId,
+		AuthId:                authId,
+		Username:              username,
+		ProfileImageUrl:       profileImageUrl,
+		GoogleAuthId:          googleAuthId,
+		GoogleEmail:           googleEmail,
+		GoogleProfileImageUrl: googleProfileImageUrl,
+	}
 }
 
 func (u userDto) validate() error {
 	if u.UserId == "" {
 		return errors.New("uid is empty")
 	}
-	if u.AuthId == "" && (u.GoogleAuthId == "" || u.GoogleEmail == "") {
-		return errors.New("auth_id or google_auth_id and google_email are empty")
+	if (u.AuthId == nil || u.Username == nil) && (u.GoogleAuthId == nil || u.GoogleEmail == nil) {
+		return errors.New("auth_id and username or google_auth_id and google_email are empty")
 	}
 	return nil
 }

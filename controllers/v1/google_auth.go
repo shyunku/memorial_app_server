@@ -27,7 +27,7 @@ var (
 
 type GoogleOauth2UserInfo struct {
 	Email         string `json:"email"`
-	Id            string `json:"id"`
+	Id            string `json:"id"` // google auth id
 	Picture       string `json:"picture"`
 	VerifiedEmail bool   `json:"verified_email"`
 }
@@ -50,6 +50,48 @@ func InitializeGoogleOauth() {
 	if clientId == "" || clientSecret == "" || redirectUrl == "" {
 		panic("Missing environment variables for Google OAuth2 configuration")
 	}
+}
+
+func SignupWithGoogleAuth(c *gin.Context) {
+	var body SignupWithGoogleAuthRequestDto
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// check if user already registered in database with Google auth
+	var userEntity database.UserEntity
+	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", body.GoogleAuthId)
+	err := result.StructScan(&userEntity)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		} else {
+			log.Error(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// user found with Google auth
+	// check if user already registered in database with email
+	if userEntity.AuthId != nil {
+		// already bind with auth and Google auth
+		c.AbortWithStatus(http.StatusConflict)
+		return
+	}
+
+	// update user with auth
+	_, err = database.DB.Exec("UPDATE user_master SET auth_id = ?, auth_encrypted_pw = ? WHERE google_auth_id = ?",
+		body.AuthId, body.EncryptedPassword, body.GoogleAuthId)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.Status(http.StatusOK)
 }
 
 func GoogleOauth2Login(c *gin.Context) {
@@ -116,19 +158,14 @@ func GoogleOauth2Callback(c *gin.Context) {
 		if err == sql.ErrNoRows {
 			// create user
 			uid := uuid.New().String()
-			_, err = database.DB.Exec("INSERT INTO user_master (uid, google_auth_id, google_email) VALUES (?, ?, ?)",
-				uid, googleOauthUserInfo.Id, googleOauthUserInfo.Email)
+			_, err = database.DB.Exec("INSERT INTO user_master (uid, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?)",
+				uid, googleOauthUserInfo.Id, googleOauthUserInfo.Email, googleOauthUserInfo.Picture)
 			if err != nil {
 				log.Error(err)
 				c.AbortWithStatus(http.StatusInternalServerError)
 				return
 			}
-			user = &userDto{
-				UserId:       uid,
-				AuthId:       googleOauthUserInfo.Email,
-				GoogleAuthId: googleOauthUserInfo.Id,
-				GoogleEmail:  googleOauthUserInfo.Email,
-			}
+			user = NewUserDto(uid, nil, nil, nil, &googleOauthUserInfo.Id, &googleOauthUserInfo.Email, &googleOauthUserInfo.Picture)
 			googleAuthResult.NewlySignedUp = true
 		} else {
 			log.Error(err)
@@ -137,12 +174,15 @@ func GoogleOauth2Callback(c *gin.Context) {
 		}
 	} else {
 		// user already exists on DB
-		user = &userDto{
-			UserId:       *userEntity.UserId,
-			AuthId:       *userEntity.GoogleEmail,
-			GoogleAuthId: *userEntity.GoogleAuthId,
-			GoogleEmail:  *userEntity.GoogleEmail,
-		}
+		user = NewUserDto(
+			*userEntity.UserId,
+			userEntity.Username,
+			userEntity.AuthId,
+			userEntity.AuthProfileImageUrl,
+			userEntity.GoogleAuthId,
+			userEntity.GoogleEmail,
+			userEntity.GoogleProfileImageUrl,
+		)
 		googleAuthResult.NewlySignedUp = false
 	}
 
@@ -195,6 +235,7 @@ func createGoogleOauthState() string {
 
 func UseGoogleAuthRouter(g *gin.RouterGroup) {
 	sg := g.Group("/google_auth")
+	sg.POST("signup", SignupWithGoogleAuth)
 	sg.GET("login", GoogleOauth2Login)
 	sg.GET("login_callback", GoogleOauth2Callback)
 }
