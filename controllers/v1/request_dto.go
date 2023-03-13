@@ -1,5 +1,10 @@
 package v1
 
+type LoginRequestDto struct {
+	AuthId            string `json:"auth_id" binding:"required"`
+	EncryptedPassword string `json:"encrypted_password" binding:"required"`
+}
+
 type SignupRequestDto struct {
 	Username string `json:"username" binding:"required"`
 	AuthId   string `json:"auth_id" binding:"required"`

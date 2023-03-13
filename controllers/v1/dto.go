@@ -1,6 +1,9 @@
 package v1
 
-import "errors"
+import (
+	"errors"
+	"memorial_app_server/database"
+)
 
 type userDto struct {
 	UserId                string  `json:"uid"`
@@ -24,6 +27,18 @@ func NewUserDto(userId string, username, authId, profileImageUrl, googleAuthId, 
 	}
 }
 
+func UserDtoFromEntity(entity database.UserEntity) *userDto {
+	return &userDto{
+		UserId:                *entity.UserId,
+		AuthId:                entity.AuthId,
+		Username:              entity.Username,
+		ProfileImageUrl:       entity.AuthProfileImageUrl,
+		GoogleAuthId:          entity.GoogleAuthId,
+		GoogleEmail:           entity.GoogleEmail,
+		GoogleProfileImageUrl: entity.GoogleProfileImageUrl,
+	}
+}
+
 func (u userDto) validate() error {
 	if u.UserId == "" {
 		return errors.New("uid is empty")
@@ -34,22 +49,35 @@ func (u userDto) validate() error {
 	return nil
 }
 
-type authTokenDto struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiredAt    int64  `json:"expired_at"`
+type authToken struct {
+	Token     string `json:"token"`
+	Uuid      string `json:"uuid"`
+	ExpiresAt int64  `json:"expires_at"`
 }
 
-func NewAuthTokenDto(accessToken, refreshToken string, expiredAt int64) *authTokenDto {
-	return &authTokenDto{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiredAt:    expiredAt,
+func NewAuthToken(token, uuid string, expiresAt int64) *authToken {
+	return &authToken{
+		Token:     token,
+		Uuid:      uuid,
+		ExpiresAt: expiresAt,
 	}
 }
 
-type googleAuthResultDto struct {
-	User          *userDto      `json:"user"`
-	Auth          *authTokenDto `json:"auth"`
-	NewlySignedUp bool          `json:"newly_signed_up"`
+type authTokenDto struct {
+	AccessToken  authToken `json:"access_token"`
+	RefreshToken authToken `json:"refresh_token"`
+	isGoogleAuth bool
+}
+
+func NewAuthTokenDto(accessToken, refreshToken authToken, isGoogleAuth bool) *authTokenDto {
+	return &authTokenDto{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		isGoogleAuth: isGoogleAuth,
+	}
+}
+
+type authResultDto struct {
+	User *userDto      `json:"user"`
+	Auth *authTokenDto `json:"auth"`
 }

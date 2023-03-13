@@ -97,10 +97,12 @@ func SignupWithGoogleAuth(c *gin.Context) {
 func GoogleOauth2Login(c *gin.Context) {
 	// create random token to prevent CSRF
 	stateToken := createGoogleOauthState()
+
 	// save token to session
 	c.SetCookie("oauthstate", stateToken, 0, "/", "", false, true)
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate") // Set Cache-Control header
 	url := config.AuthCodeURL(stateToken, oauth2.AccessTypeOffline)
+
 	// redirect to Google's consent page to ask for permission
 	c.Redirect(http.StatusMovedPermanently, url)
 }
@@ -138,7 +140,6 @@ func GoogleOauth2Callback(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	log.Debug("Contents:", contents)
 
 	var googleOauthUserInfo GoogleOauth2UserInfo
 	err = json.Unmarshal(contents, &googleOauthUserInfo)
@@ -151,7 +152,7 @@ func GoogleOauth2Callback(c *gin.Context) {
 	// create user if not exist
 	var userEntity database.UserEntity
 	var user *userDto
-	var googleAuthResult googleAuthResultDto
+	var googleAuthResult authResultDto
 	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleOauthUserInfo.Id)
 	err = result.StructScan(&userEntity)
 	if err != nil {
@@ -166,7 +167,6 @@ func GoogleOauth2Callback(c *gin.Context) {
 				return
 			}
 			user = NewUserDto(uid, nil, nil, nil, &googleOauthUserInfo.Id, &googleOauthUserInfo.Email, &googleOauthUserInfo.Picture)
-			googleAuthResult.NewlySignedUp = true
 		} else {
 			log.Error(err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -183,7 +183,6 @@ func GoogleOauth2Callback(c *gin.Context) {
 			userEntity.GoogleEmail,
 			userEntity.GoogleProfileImageUrl,
 		)
-		googleAuthResult.NewlySignedUp = false
 	}
 
 	if user == nil {
@@ -199,7 +198,17 @@ func GoogleOauth2Callback(c *gin.Context) {
 	}
 
 	googleAuthResult.User = user
-	googleAuthResult.Auth = NewAuthTokenDto(token.AccessToken, token.RefreshToken, token.Expiry.Unix())
+	googleAuthResult.Auth = NewAuthTokenDto(
+		*NewAuthToken(token.AccessToken, uuid.New().String(), token.Expiry.Unix()),
+		*NewAuthToken(token.RefreshToken, uuid.New().String(), token.Expiry.Unix()),
+		true,
+	)
+
+	if err := saveAuthToken(user.UserId, googleAuthResult.Auth); err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 
 	// Send a message to the client's window object
 	marshaled, err := json2.Marshal(googleAuthResult)
@@ -209,8 +218,7 @@ func GoogleOauth2Callback(c *gin.Context) {
 		return
 	}
 
-	log.Debug("Marshaled:", marshaled)
-	log.Debug("Original:", googleAuthResult)
+	log.Debug("googleAuthResult:", googleAuthResult)
 
 	script := fmt.Sprintf(`<script>
 		try {
