@@ -2,7 +2,7 @@ package v1
 
 import (
 	"errors"
-	"memorial_app_server/database"
+	"memorial_app_server/service/database"
 )
 
 type userDto struct {
@@ -69,11 +69,10 @@ type authTokenDto struct {
 	isGoogleAuth bool
 }
 
-func NewAuthTokenDto(accessToken, refreshToken authToken, isGoogleAuth bool) *authTokenDto {
+func NewAuthTokenDto(accessToken, refreshToken authToken) *authTokenDto {
 	return &authTokenDto{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		isGoogleAuth: isGoogleAuth,
 	}
 }
 

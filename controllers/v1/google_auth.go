@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"io"
-	"memorial_app_server/database"
 	json2 "memorial_app_server/libs/json"
 	"memorial_app_server/log"
+	database2 "memorial_app_server/service/database"
 	"net/http"
 	"os"
 )
@@ -60,8 +60,8 @@ func SignupWithGoogleAuth(c *gin.Context) {
 	}
 
 	// check if user already registered in database with Google auth
-	var userEntity database.UserEntity
-	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", body.GoogleAuthId)
+	var userEntity database2.UserEntity
+	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", body.GoogleAuthId)
 	err := result.StructScan(&userEntity)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -83,7 +83,7 @@ func SignupWithGoogleAuth(c *gin.Context) {
 	}
 
 	// update user with auth
-	_, err = database.DB.Exec("UPDATE user_master SET auth_id = ?, auth_encrypted_pw = ? WHERE google_auth_id = ?",
+	_, err = database2.DB.Exec("UPDATE user_master SET auth_id = ?, auth_encrypted_pw = ? WHERE google_auth_id = ?",
 		body.AuthId, body.EncryptedPassword, body.GoogleAuthId)
 	if err != nil {
 		log.Error(err)
@@ -150,16 +150,16 @@ func GoogleOauth2Callback(c *gin.Context) {
 	}
 
 	// create user if not exist
-	var userEntity database.UserEntity
+	var userEntity database2.UserEntity
 	var user *userDto
 	var googleAuthResult authResultDto
-	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleOauthUserInfo.Id)
+	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleOauthUserInfo.Id)
 	err = result.StructScan(&userEntity)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// create user
 			uid := uuid.New().String()
-			_, err = database.DB.Exec("INSERT INTO user_master (uid, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?)",
+			_, err = database2.DB.Exec("INSERT INTO user_master (uid, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?)",
 				uid, googleOauthUserInfo.Id, googleOauthUserInfo.Email, googleOauthUserInfo.Picture)
 			if err != nil {
 				log.Error(err)
@@ -201,10 +201,9 @@ func GoogleOauth2Callback(c *gin.Context) {
 	googleAuthResult.Auth = NewAuthTokenDto(
 		*NewAuthToken(token.AccessToken, uuid.New().String(), token.Expiry.Unix()),
 		*NewAuthToken(token.RefreshToken, uuid.New().String(), token.Expiry.Unix()),
-		true,
 	)
 
-	if err := saveAuthToken(user.UserId, googleAuthResult.Auth); err != nil {
+	if err := saveRefreshToken(user.UserId, googleAuthResult.Auth.RefreshToken); err != nil {
 		log.Error(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return

@@ -6,9 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
-	"memorial_app_server/database"
 	"memorial_app_server/log"
-	"memorial_app_server/service"
+	database2 "memorial_app_server/service/database"
 	"net/http"
 	"os"
 	"time"
@@ -23,8 +22,8 @@ func Login(c *gin.Context) {
 	}
 
 	// check if user registered in database
-	var userEntity database.UserEntity
-	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId).StructScan(&userEntity); err != nil {
+	var userEntity database2.UserEntity
+	if err := database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId).StructScan(&userEntity); err != nil {
 		if err == sql.ErrNoRows {
 			// user not found
 			c.AbortWithStatus(http.StatusUnauthorized)
@@ -51,14 +50,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	if err := saveAuthToken(userId, authToken); err != nil {
+	if err := saveRefreshToken(userId, authToken.RefreshToken); err != nil {
 		log.Error(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
 	userDto := UserDtoFromEntity(userEntity)
-	authDto := NewAuthTokenDto(authToken.AccessToken, authToken.RefreshToken, false)
+	authDto := NewAuthTokenDto(authToken.AccessToken, authToken.RefreshToken)
 	authResult := &authResultDto{
 		User: userDto,
 		Auth: authDto,
@@ -76,14 +75,14 @@ func Signup(c *gin.Context) {
 	}
 
 	// check if user already registered in database
-	var userEntity database.UserEntity
-	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId)
+	var userEntity database2.UserEntity
+	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId)
 	err := result.StructScan(&userEntity)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// create user
 			uid := uuid.New().String()
-			_, err := database.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw) VALUES (?, ?, ?)",
+			_, err := database2.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw) VALUES (?, ?, ?)",
 				uid, body.AuthId, body.EncryptedPassword)
 			if err != nil {
 				log.Error(err)
@@ -92,7 +91,7 @@ func Signup(c *gin.Context) {
 			}
 
 			// successfully created user (most standard case)
-			result = database.DB.QueryRowx("SELECT * FROM user_master WHERE uid = ?", uid)
+			result = database2.DB.QueryRowx("SELECT * FROM user_master WHERE uid = ?", uid)
 			err = result.StructScan(&userEntity)
 			if err != nil {
 				// error occurred while getting created user data
@@ -121,18 +120,20 @@ func createAuthToken(uid string) (*authTokenDto, error) {
 	// load jwt secret from env
 	jwtAccessSecretKey := os.Getenv("JWT_ACCESS_SECRET")
 	jwtRefreshSecretKey := os.Getenv("JWT_REFRESH_SECRET")
+	jwtAccessExpireTimeRaw := os.Getenv("JWT_ACCESS_EXPIRE")
+	jwtRefreshExpireTimeRaw := os.Getenv("JWT_REFRESH_EXPIRE")
 
-	// validate jwt secret
-	if jwtAccessSecretKey == "" {
-		return nil, errors.New("jwt access secret key is empty")
+	jwtAccessExpireTime, err := time.ParseDuration(jwtAccessExpireTimeRaw)
+	if err != nil {
+		return nil, err
 	}
-
-	if jwtRefreshSecretKey == "" {
-		return nil, errors.New("jwt refresh secret key is empty")
+	jwtRefreshExpireTime, err := time.ParseDuration(jwtRefreshExpireTimeRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	// set access token
-	atd.AccessToken.ExpiresAt = time.Now().Add(time.Hour * 3).Unix() // 3 hours expiration
+	atd.AccessToken.ExpiresAt = time.Now().Add(jwtAccessExpireTime).Unix() // 3 hours expiration
 	atd.AccessToken.Uuid = uuid.New().String()
 	accessTokenClaims := jwt.MapClaims{}
 	accessTokenClaims["uid"] = uid
@@ -146,7 +147,7 @@ func createAuthToken(uid string) (*authTokenDto, error) {
 	}
 
 	// set refresh token
-	atd.RefreshToken.ExpiresAt = time.Now().Add(time.Hour * 24 * 7).Unix() // 7 days expiration
+	atd.RefreshToken.ExpiresAt = time.Now().Add(jwtRefreshExpireTime).Unix() // 7 days expiration
 	atd.RefreshToken.Uuid = uuid.New().String()
 	refreshTokenClaims := jwt.MapClaims{}
 	refreshTokenClaims["uid"] = uid
@@ -162,15 +163,18 @@ func createAuthToken(uid string) (*authTokenDto, error) {
 	return atd, nil
 }
 
-func saveAuthToken(uid string, atd *authTokenDto) error {
-	accessTokenExpiresUnix := time.Unix(atd.AccessToken.ExpiresAt, 0)
-	refreshTokenExpiresUnix := time.Unix(atd.RefreshToken.ExpiresAt, 0)
+func saveRefreshToken(uid string, refreshToken authToken) error {
+	refreshTokenExpiresUnix := time.Unix(refreshToken.ExpiresAt, 0)
 	now := time.Now()
 
-	if err := service.InMemoryDB.SetExp(atd.AccessToken.Uuid, uid, accessTokenExpiresUnix.Sub(now)); err != nil {
+	if err := database2.InMemoryDB.SetExp(refreshToken.Token, uid, refreshTokenExpiresUnix.Sub(now)); err != nil {
 		return err
 	}
-	if err := service.InMemoryDB.SetExp(atd.RefreshToken.Uuid, uid, refreshTokenExpiresUnix.Sub(now)); err != nil {
+	return nil
+}
+
+func deleteRefreshToken(refreshToken string) error {
+	if err := database2.InMemoryDB.Del(refreshToken); err != nil {
 		return err
 	}
 	return nil
@@ -180,4 +184,5 @@ func UseAuthRouter(g *gin.RouterGroup) {
 	sg := g.Group("/auth")
 	sg.POST("login", Login)
 	sg.POST("signup", Signup)
+	sg.POST("refreshToken", RefreshToken)
 }
