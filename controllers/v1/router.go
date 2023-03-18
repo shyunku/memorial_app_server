@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
+	v1 "memorial_app_server/socket/v1"
 	"net/http"
 	"os"
 	"strings"
@@ -12,9 +13,20 @@ import (
 
 func UseRouterV1(r *gin.Engine) {
 	g := r.Group("/v1")
+	g.Use(DefaultMiddleware)
 	UseAuthRouter(g)
 	UseGoogleAuthRouter(g)
 	UseTokenRouter(g)
+
+	// socket handler
+	g.Any("/ws", func(context *gin.Context) {
+		v1.UseSocketV1(context.Writer, context.Request)
+	})
+}
+
+func DefaultMiddleware(c *gin.Context) {
+	//log.Debug(c.Request.Method, c.Request.URL.String())
+	c.Next()
 }
 
 func AuthMiddleware(c *gin.Context) {
@@ -39,12 +51,11 @@ func AuthMiddleware(c *gin.Context) {
 	}
 
 	// check if token is expired
-	if _, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+	if _, ok := token.Claims.(jwt.MapClaims); !ok || !token.Valid {
 		// token expired
-		// if refresh token exists in present, refresh access token
 		c.JSON(
 			http.StatusUnauthorized,
-			gin.H{"error": "token expired, and failed to refresh token: invalid refresh token"},
+			gin.H{"error": "token expired or invalid"},
 		)
 	}
 

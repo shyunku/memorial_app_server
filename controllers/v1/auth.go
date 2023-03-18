@@ -7,7 +7,8 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"memorial_app_server/log"
-	database2 "memorial_app_server/service/database"
+	"memorial_app_server/service/database"
+	"memorial_app_server/util"
 	"net/http"
 	"os"
 	"time"
@@ -22,8 +23,8 @@ func Login(c *gin.Context) {
 	}
 
 	// check if user registered in database
-	var userEntity database2.UserEntity
-	if err := database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId).StructScan(&userEntity); err != nil {
+	var userEntity database.UserEntity
+	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId).StructScan(&userEntity); err != nil {
 		if err == sql.ErrNoRows {
 			// user not found
 			c.AbortWithStatus(http.StatusUnauthorized)
@@ -75,14 +76,14 @@ func Signup(c *gin.Context) {
 	}
 
 	// check if user already registered in database
-	var userEntity database2.UserEntity
-	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId)
+	var userEntity database.UserEntity
+	result := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId)
 	err := result.StructScan(&userEntity)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// create user
 			uid := uuid.New().String()
-			_, err := database2.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw) VALUES (?, ?, ?)",
+			_, err := database.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw) VALUES (?, ?, ?)",
 				uid, body.AuthId, body.EncryptedPassword)
 			if err != nil {
 				log.Error(err)
@@ -91,7 +92,7 @@ func Signup(c *gin.Context) {
 			}
 
 			// successfully created user (most standard case)
-			result = database2.DB.QueryRowx("SELECT * FROM user_master WHERE uid = ?", uid)
+			result = database.DB.QueryRowx("SELECT * FROM user_master WHERE uid = ?", uid)
 			err = result.StructScan(&userEntity)
 			if err != nil {
 				// error occurred while getting created user data
@@ -113,6 +114,51 @@ func Signup(c *gin.Context) {
 	}
 }
 
+func RefreshToken(c *gin.Context) {
+	// get refresh token from header
+	refreshToken := c.GetHeader("X-Refresh-Token")
+	if refreshToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh token not found"})
+		return
+	}
+
+	userId, err := database.InMemoryDB.Get(refreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	// check if user exists
+	var userEntity database.UserEntity
+	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE uid = ?", userId).StructScan(&userEntity); err != nil {
+		if err == sql.ErrNoRows {
+			// user not found
+			log.Error("user not found")
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		log.Error(err)
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	authToken, err := createAuthToken(userId)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if err := saveRefreshToken(userId, authToken.RefreshToken); err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	authDto := NewAuthTokenDto(authToken.AccessToken, authToken.RefreshToken)
+	c.JSON(http.StatusOK, authDto)
+}
+
 func createAuthToken(uid string) (*authTokenDto, error) {
 	var err error
 	atd := &authTokenDto{}
@@ -123,11 +169,11 @@ func createAuthToken(uid string) (*authTokenDto, error) {
 	jwtAccessExpireTimeRaw := os.Getenv("JWT_ACCESS_EXPIRE")
 	jwtRefreshExpireTimeRaw := os.Getenv("JWT_REFRESH_EXPIRE")
 
-	jwtAccessExpireTime, err := time.ParseDuration(jwtAccessExpireTimeRaw)
+	jwtAccessExpireTime, err := util.ParseDuration(jwtAccessExpireTimeRaw)
 	if err != nil {
 		return nil, err
 	}
-	jwtRefreshExpireTime, err := time.ParseDuration(jwtRefreshExpireTimeRaw)
+	jwtRefreshExpireTime, err := util.ParseDuration(jwtRefreshExpireTimeRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +213,14 @@ func saveRefreshToken(uid string, refreshToken authToken) error {
 	refreshTokenExpiresUnix := time.Unix(refreshToken.ExpiresAt, 0)
 	now := time.Now()
 
-	if err := database2.InMemoryDB.SetExp(refreshToken.Token, uid, refreshTokenExpiresUnix.Sub(now)); err != nil {
+	if err := database.InMemoryDB.SetExp(refreshToken.Token, uid, refreshTokenExpiresUnix.Sub(now)); err != nil {
 		return err
 	}
 	return nil
 }
 
 func deleteRefreshToken(refreshToken string) error {
-	if err := database2.InMemoryDB.Del(refreshToken); err != nil {
+	if err := database.InMemoryDB.Del(refreshToken); err != nil {
 		return err
 	}
 	return nil
