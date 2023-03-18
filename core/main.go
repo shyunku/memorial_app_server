@@ -6,6 +6,7 @@ import (
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -34,11 +35,17 @@ func main() {
 		"JWT_REFRESH_SECRET",
 		"JWT_REFRESH_EXPIRE",
 	}
+	missingVariables := make([]string, 0)
 	for _, key := range envCheckKeys {
 		if os.Getenv(key) == "" {
-			log.Error("Missing environment variable: " + key)
-			os.Exit(-1)
+			missingVariables = append(missingVariables, key)
 		}
+	}
+
+	if len(missingVariables) > 0 {
+		missingVarKeys := strings.Join(missingVariables, ", ")
+		log.Error("Missing environment variables: ", missingVarKeys)
+		os.Exit(-1)
 	}
 
 	// Initialize database

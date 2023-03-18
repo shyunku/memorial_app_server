@@ -65,6 +65,9 @@ func Initialize() (db *sqlx.DB, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = db.Ping(); err != nil {
+		return nil, errors.New("failed to connect database: " + err.Error())
+	}
 	DB = db
 	return db, nil
 }
