@@ -14,7 +14,7 @@ var (
 type Transaction struct {
 	UserId  string
 	Type    int64
-	Content any
+	Content interface{}
 }
 
 func (tx *Transaction) Hash() StateHash {

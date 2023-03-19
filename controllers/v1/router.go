@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
-	v1 "memorial_app_server/socket/v1"
 	"net/http"
 	"os"
 	"strings"
@@ -17,11 +16,7 @@ func UseRouterV1(r *gin.Engine) {
 	UseAuthRouter(g)
 	UseGoogleAuthRouter(g)
 	UseTokenRouter(g)
-
-	// socket handler
-	g.Any("/ws", func(context *gin.Context) {
-		v1.UseSocketV1(context.Writer, context.Request)
-	})
+	UseSocketRouter(g)
 }
 
 func DefaultMiddleware(c *gin.Context) {

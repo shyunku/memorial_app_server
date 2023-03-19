@@ -2,13 +2,19 @@ package service
 
 func ExecuteTransaction(tx *Transaction) error {
 	switch tx.Type {
+	case TxInitialState:
+		return InitialState(tx)
 	case TxCreateTask:
-		return ExecuteCreateTask(tx)
+		return CreateTask(tx)
 	default:
 		return ErrInvalidTxType
 	}
 }
 
-func ExecuteCreateTask(tx *Transaction) error {
+func InitialState(tx *Transaction) error {
+	panic("not implemented")
+}
+
+func CreateTask(tx *Transaction) error {
 	panic("not implemented")
 }

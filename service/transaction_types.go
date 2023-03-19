@@ -1,5 +1,6 @@
 package service
 
 const (
-	TxCreateTask = iota
+	TxInitialState = iota
+	TxCreateTask
 )
