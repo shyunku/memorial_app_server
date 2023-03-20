@@ -6,19 +6,22 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"math/big"
 	"memorial_app_server/log"
+	"memorial_app_server/service/state"
 )
 
-type socketHandler func(conn *websocket.Conn, data interface{}) (interface{}, error)
+type socketHandler func(conn *websocket.Conn, uid string, data interface{}) (interface{}, error)
 
 var (
 	socketHandlers = map[string]socketHandler{
-		"test": test,
+		"test":        test,
+		"transaction": handleTransaction,
 	}
 	socketBundles = map[string]*UserSocketBundle{}
 )
 
-func test(conn *websocket.Conn, data interface{}) (interface{}, error) {
+func test(conn *websocket.Conn, uid string, data interface{}) (interface{}, error) {
 	// data to string
 	str, ok := data.(string)
 	if !ok {
@@ -27,8 +30,47 @@ func test(conn *websocket.Conn, data interface{}) (interface{}, error) {
 	return str, nil
 }
 
-func handleTransactions() {
+func handleTransaction(conn *websocket.Conn, uid string, data interface{}) (interface{}, error) {
+	request, ok := data.(*TxSocketRequest)
+	if !ok {
+		log.Error("Invalid data type")
+		return nil, fmt.Errorf("invalid request: check format")
+	}
 
+	userChain := state.Chains.GetChain(uid)
+
+	// check if targetBlockNumber is valid
+	targetWaitingBlockNumber, ok := new(big.Int).SetString(request.TargetBlockNumber, 10)
+	if !ok {
+		log.Error("Invalid target block number")
+		return nil, fmt.Errorf("invalid block number: couldn't be parsed")
+	}
+
+	waitingBlockNumber := userChain.GetWaitingBlockNumber()
+	if targetWaitingBlockNumber.Cmp(waitingBlockNumber) != 0 {
+		// different block number
+		log.Error("Invalid target block number")
+		return nil, fmt.Errorf("invalid block number: waiting for block #%s", waitingBlockNumber.String())
+	}
+
+	// check if transaction is valid
+	tx := state.NewTransaction(request.From, request.Type, request.Timestamp, request.Content)
+	if tx.From != uid {
+		log.Error("Invalid transaction")
+		return nil, fmt.Errorf("invalid source: trying to apply transaction as other user")
+	}
+	if err := tx.Validate(); err != nil {
+		log.Error("Invalid transaction")
+		return nil, fmt.Errorf("invalid request: %s", err.Error())
+	}
+
+	// apply transaction
+	if err := userChain.ApplyTransaction(tx); err != nil {
+		log.Error("Error during applying transaction")
+		return nil, fmt.Errorf("failed to apply transaction: %s", err.Error())
+	}
+
+	return nil, nil
 }
 
 func SocketV1(c *gin.Context) {
@@ -102,7 +144,7 @@ func SocketV1(c *gin.Context) {
 		}
 
 		// handle message
-		resp, err := handler(conn, recvPacket.Data)
+		resp, err := handler(conn, uid, recvPacket.Data)
 		sendPacket := &SocketSendPacket{
 			Topic:      recvPacket.Topic,
 			Data:       resp,

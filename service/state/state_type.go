@@ -1,4 +1,4 @@
-package service
+package state
 
 type Category struct {
 	Id   string

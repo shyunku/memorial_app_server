@@ -5,6 +5,7 @@ import (
 	"memorial_app_server/controllers"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
+	"memorial_app_server/service/state"
 	"os"
 	"strings"
 )
@@ -58,6 +59,13 @@ func main() {
 	// Initialize in-memory database
 	log.Info("Initializing in-memory database...")
 	database.InMemoryDB = database.NewRedis()
+
+	// Initialize state service
+	err := state.InitializeService(database.DB)
+	if err != nil {
+		log.Error(err)
+		os.Exit(-3)
+	}
 
 	// Run web server with gin
 	controllers.RunGin()

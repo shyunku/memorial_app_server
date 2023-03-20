@@ -67,3 +67,14 @@ func (b *UserSocketBundle) RemoveSocket(connectionId string) {
 func (b *UserSocketBundle) GetSocket(connectionId string) *UserSocket {
 	return b.sockets[connectionId]
 }
+
+/* -------------------------------- Custom -------------------------------- */
+
+type TxSocketRequest struct {
+	From      string `json:"from"`
+	Type      int64  `json:"type"`
+	Timestamp int64  `json:"timestamp"`
+	Content   []byte `json:"content"`
+
+	TargetBlockNumber string // target block number as string (e.g. "1051240")
+}
