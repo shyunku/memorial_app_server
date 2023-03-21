@@ -2,6 +2,7 @@ package state
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"memorial_app_server/libs/json"
 	"reflect"
@@ -14,6 +15,22 @@ var (
 )
 
 type Hash [32]byte
+
+func (h Hash) Bytes() []byte {
+	return h[:]
+}
+
+func hexToHash(str string) (Hash, error) {
+	// convert hex string to byte array
+	bytes, err := hex.DecodeString(str)
+	if err != nil {
+		return Hash{}, err
+	}
+	// convert byte array to hash
+	var hash Hash
+	copy(hash[:], bytes)
+	return hash, nil
+}
 
 type Transaction struct {
 	From      string

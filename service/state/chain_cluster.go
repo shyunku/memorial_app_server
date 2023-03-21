@@ -55,21 +55,25 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 	}
 
 	// load states
-	blockRows, err := database.DB.Queryx("SELECT * FROM blocks")
+	var blockEntities map[*big.Int]database.BlockEntity
+	blockRows, err := database.DB.Queryx("SELECT * FROM blocks ORDER BY block_number")
 	if err != nil {
 		return err
 	}
 
 	for blockRows.Next() {
 		// insert blocks
-		var block database.StateBlockEntity
+		var block database.BlockEntity
 		if err := blockRows.StructScan(&block); err != nil {
 			log.Errorf("failed to scan struct of userId %s: %v ", *block.UserId, err)
 			return err
 		}
-
-		chain := sm.GetChain(*block.UserId)
 		blockNumber := big.NewInt(*block.Number)
+		blockEntities[blockNumber] = block
+	}
+
+	for blockNumber, block := range blockEntities {
+		chain := sm.GetChain(*block.UserId)
 		if _, ok := chain.blocks[blockNumber]; ok {
 			// no need to update
 			continue
@@ -88,7 +92,13 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			return err
 		}
 
-		newBlock := NewStateBlock(blockNumber, newState, tx)
+		prevBlockHash, err := hexToHash(*block.PrevBlockHash)
+		if err != nil {
+			log.Errorf("failed to parse prev_block_hash of userId %s: %v", *block.UserId, err)
+			return err
+		}
+		
+		newBlock := NewBlock(blockNumber, newState, tx, prevBlockHash)
 		chain.InsertBlock(newBlock)
 	}
 

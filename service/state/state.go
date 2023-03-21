@@ -8,14 +8,16 @@ import (
 
 // State represents the current state of the application.
 type State struct {
-	categories map[int]*Category
-	tasks      map[int]*Task
+	tasks      map[int64]Task
+	subTasks   map[int64]Subtask
+	categories map[int64]Category
 }
 
 func NewState() *State {
 	return &State{
-		categories: make(map[int]*Category),
-		tasks:      make(map[int]*Task),
+		tasks:      make(map[int64]Task),
+		subTasks:   make(map[int64]Subtask),
+		categories: make(map[int64]Category),
 	}
 }
 
@@ -40,4 +42,27 @@ func (s *State) Hash() Hash {
 
 	hash := sha256.Sum256(fieldBytes)
 	return hash
+}
+
+func (s *State) Copy() *State {
+	copiedTasks := make(map[int64]Task)
+	for k, v := range s.tasks {
+		copiedTasks[k] = v
+	}
+
+	copiedSubTasks := make(map[int64]Subtask)
+	for k, v := range s.subTasks {
+		copiedSubTasks[k] = v
+	}
+
+	copiedCategories := make(map[int64]Category)
+	for k, v := range s.categories {
+		copiedCategories[k] = v
+	}
+
+	return &State{
+		tasks:      copiedTasks,
+		subTasks:   copiedSubTasks,
+		categories: copiedCategories,
+	}
 }

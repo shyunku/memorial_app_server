@@ -11,11 +11,13 @@ type UserEntity struct {
 	GoogleProfileImageUrl *string `db:"google_profile_image_url" json:"googleProfileImageUrl"`
 }
 
-type StateBlockEntity struct {
-	UserId *string `db:"uid" json:"userId"`
-	State  []byte  `db:"state" json:"state"`
-	Number *int64  `db:"block_number" json:"blockNumber"`
-	TxHash *string `db:"tx_hash" json:"txHash"`
+type BlockEntity struct {
+	UserId        *string `db:"uid" json:"userId"`
+	State         []byte  `db:"state" json:"state"`
+	Number        *int64  `db:"block_number" json:"blockNumber"`
+	TxHash        *string `db:"tx_hash" json:"txHash"`
+	BlockHash     *string `db:"block_hash" json:"blockHash"`
+	PrevBlockHash *string `db:"prev_block_hash" json:"prevBlockHash"`
 }
 
 type TransactionEntity struct {

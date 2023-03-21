@@ -11,17 +11,20 @@ import (
 	"memorial_app_server/service/state"
 )
 
-type socketHandler func(conn *websocket.Conn, uid string, data interface{}) (interface{}, error)
+type socketHandler func(socket *UserSocket, uid string, data interface{}) (interface{}, error)
 
 var (
 	socketHandlers = map[string]socketHandler{
-		"test":        test,
-		"transaction": handleTransaction,
+		"test":               test,
+		"transaction":        handleTransaction,
+		"waitingBlockNumber": waitingBlockNumber,
+		"syncBlocks":         syncBlocks,
+		"commitTransactions": commitTransactions,
 	}
 	socketBundles = map[string]*UserSocketBundle{}
 )
 
-func test(conn *websocket.Conn, uid string, data interface{}) (interface{}, error) {
+func test(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
 	// data to string
 	str, ok := data.(string)
 	if !ok {
@@ -30,7 +33,7 @@ func test(conn *websocket.Conn, uid string, data interface{}) (interface{}, erro
 	return str, nil
 }
 
-func handleTransaction(conn *websocket.Conn, uid string, data interface{}) (interface{}, error) {
+func handleTransaction(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
 	request, ok := data.(*TxSocketRequest)
 	if !ok {
 		log.Error("Invalid data type")
@@ -40,11 +43,7 @@ func handleTransaction(conn *websocket.Conn, uid string, data interface{}) (inte
 	userChain := state.Chains.GetChain(uid)
 
 	// check if targetBlockNumber is valid
-	targetWaitingBlockNumber, ok := new(big.Int).SetString(request.TargetBlockNumber, 10)
-	if !ok {
-		log.Error("Invalid target block number")
-		return nil, fmt.Errorf("invalid block number: couldn't be parsed")
-	}
+	targetWaitingBlockNumber := new(big.Int).SetInt64(request.TargetBlockNumber)
 
 	waitingBlockNumber := userChain.GetWaitingBlockNumber()
 	if targetWaitingBlockNumber.Cmp(waitingBlockNumber) != 0 {
@@ -54,20 +53,88 @@ func handleTransaction(conn *websocket.Conn, uid string, data interface{}) (inte
 	}
 
 	// check if transaction is valid
-	tx := state.NewTransaction(request.From, request.Type, request.Timestamp, request.Content)
-	if tx.From != uid {
-		log.Error("Invalid transaction")
-		return nil, fmt.Errorf("invalid source: trying to apply transaction as other user")
-	}
+	tx := state.NewTransaction(uid, request.Type, request.Timestamp, request.Content)
 	if err := tx.Validate(); err != nil {
 		log.Error("Invalid transaction")
 		return nil, fmt.Errorf("invalid request: %s", err.Error())
 	}
 
 	// apply transaction
-	if err := userChain.ApplyTransaction(tx); err != nil {
+	newBlock, err := userChain.ApplyTransaction(tx)
+	if err != nil {
 		log.Error("Error during applying transaction")
 		return nil, fmt.Errorf("failed to apply transaction: %s", err.Error())
+	}
+
+	go func() {
+		// broadcast transaction to same user connections
+		bundle, ok := socketBundles[uid]
+		if !ok {
+			log.Warnf("Couldn't find socket bundle for user %s", uid)
+		}
+
+		for _, sock := range bundle.sockets {
+			// except sender
+			if sock.ConnectionId == socket.ConnectionId {
+				continue
+			}
+
+			// send transaction
+			if err := sock.Emitter("broadcast_transaction", newBlock); err != nil {
+				log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
+			}
+		}
+	}()
+
+	return nil, nil
+}
+
+func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	userChain := state.Chains.GetChain(uid)
+	return userChain.GetWaitingBlockNumber().String(), nil
+}
+
+func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	request, ok := data.(*SyncBlocksSocketRequest)
+	if !ok {
+		log.Error("Invalid data type")
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+
+	startBlockNumber := new(big.Int).SetInt64(request.StartBlockNumber)
+	endBlockNumber := new(big.Int).SetInt64(request.EndBlockNumber)
+
+	// check if startBlockNumber is smaller than endBlockNumber
+	if startBlockNumber.Cmp(endBlockNumber) > 0 {
+		log.Error("Invalid block number range")
+		return nil, fmt.Errorf("invalid block number range: start block number is greater than end block number")
+	}
+
+	// fetch blocks from chain
+	blocks, err := userChain.GetBlocksByInterval(startBlockNumber, endBlockNumber)
+	if err != nil {
+		log.Error("Error during fetching blocks")
+		return nil, fmt.Errorf("failed to fetch blocks: %s", err.Error())
+	}
+
+	return blocks, nil
+}
+
+func commitTransactions(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	request, ok := data.(*CommitTxBundleSocketRequest)
+	if !ok {
+		log.Error("Invalid data type")
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	for _, txReq := range *request {
+		_, err := handleTransaction(socket, uid, txReq)
+		if err != nil {
+			log.Error("Error during handling transaction: ", err)
+			return nil, err
+		}
 	}
 
 	return nil, nil
@@ -103,7 +170,29 @@ func SocketV1(c *gin.Context) {
 		socketBundles[uid] = socketBundle
 	}
 
-	socketBundle.AddSocket(connectionId, conn)
+	socket := socketBundle.AddSocket(connectionId, conn, func(topic string, data interface{}) error {
+		sendPacket := &SocketSendPacket{
+			Topic:      topic,
+			Data:       data,
+			RequestId:  "",
+			Success:    true,
+			ErrMessage: "",
+		}
+
+		sendMessage, err := sendPacket.bytes()
+		if err != nil {
+			log.Error("Error during creating packet: ", err)
+			return err
+		}
+
+		// write out a message
+		if err := conn.WriteMessage(websocket.BinaryMessage, sendMessage); err != nil {
+			log.Error("Error during writing message: ", err)
+			return err
+		}
+
+		return nil
+	})
 
 	defer func() {
 		socketBundle.RemoveSocket("access token")
@@ -133,7 +222,7 @@ func SocketV1(c *gin.Context) {
 		printStat(
 			connectionId,
 			uid,
-			fmt.Sprintf("[%s]message<%s> %v", shorten(recvPacket.RequestId), recvPacket.Topic, recvPacket.Data),
+			fmt.Sprintf("[%s] message<%s> %v", shorten(recvPacket.RequestId), recvPacket.Topic, recvPacket.Data),
 		)
 
 		// find handler
@@ -144,7 +233,7 @@ func SocketV1(c *gin.Context) {
 		}
 
 		// handle message
-		resp, err := handler(conn, uid, recvPacket.Data)
+		resp, err := handler(socket, uid, recvPacket.Data)
 		sendPacket := &SocketSendPacket{
 			Topic:      recvPacket.Topic,
 			Data:       resp,

@@ -2,8 +2,16 @@ package util
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 	"time"
+)
+
+var (
+	Big0 = big.NewInt(0)
+	Big1 = big.NewInt(1)
+	Big2 = big.NewInt(2)
+	Big3 = big.NewInt(3)
 )
 
 func ParseDuration(str string) (time.Duration, error) {
