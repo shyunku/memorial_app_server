@@ -80,3 +80,8 @@ type authResultDto struct {
 	User *userDto      `json:"user"`
 	Auth *authTokenDto `json:"auth"`
 }
+
+type googleAuthResultDto struct {
+	GoogleUserInfo *GoogleOauth2UserInfo `json:"googleUserInfo"`
+	Auth           *authTokenDto         `json:"auth"`
+}

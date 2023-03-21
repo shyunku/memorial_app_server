@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="5d2794c0-389e-489a-ab7e-659517e2edba" name="shyunku-main">
+        <fileTransfer rootFolder="/home/ec2-user/go_projects/memorial_app_server" accessType="SFTP" host="52.79.228.100" port="22" sshConfigId="cd9b8fca-7162-48e9-a4ed-951ab333174e" sshConfig="shyunku-main" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

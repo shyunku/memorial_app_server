@@ -61,37 +61,58 @@ func SignupWithGoogleAuth(c *gin.Context) {
 
 	// check if user already registered in database with Google auth
 	var userEntity database2.UserEntity
-	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", body.GoogleAuthId)
+	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ? OR google_auth_id = ?", body.AuthId, body.GoogleAuthId)
 	err := result.StructScan(&userEntity)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
+			// create user
+			// case: user that Google login as first
+			uid := uuid.New().String()
+			_, err = database2.DB.Exec(
+				"INSERT INTO user_master (uid, username, auth_id, auth_encrypted_pw, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				uid, body.Username, body.AuthId, body.EncryptedPassword, body.GoogleAuthId, body.GoogleEmail, body.GoogleProfileImageUrl,
+			)
+			if err != nil {
+				log.Error(err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 		} else {
 			log.Error(err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
+	} else {
+		// user found with Google auth
+		// check if user already registered in database with email
+		if userEntity.AuthId != nil && userEntity.GoogleAuthId != nil {
+			// already bind with auth and Google auth
+			// case: user already bind with Google auth
+			c.AbortWithStatus(http.StatusConflict)
+			return
+		} else if userEntity.AuthId != nil {
+			// case: user is binding Google auth with auth
+			// update user with Google auth
+			_, err = database2.DB.Exec("UPDATE user_master SET google_auth_id = ?, google_email = ?, google_profile_image_url = ? WHERE auth_id = ?", body.GoogleAuthId, body.GoogleEmail, body.GoogleProfileImageUrl, body.AuthId)
+		} else {
+			// case: just google auth exists or no auth exists
+			// this is fatal error
+			log.Error("Fatal error: user found with Google auth but no auth")
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 	}
 
-	// user found with Google auth
-	// check if user already registered in database with email
-	if userEntity.AuthId != nil {
-		// already bind with auth and Google auth
-		c.AbortWithStatus(http.StatusConflict)
-		return
-	}
-
-	// update user with auth
-	_, err = database2.DB.Exec("UPDATE user_master SET auth_id = ?, auth_encrypted_pw = ? WHERE google_auth_id = ?",
-		body.AuthId, body.EncryptedPassword, body.GoogleAuthId)
+	// rescan user
+	result = database2.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ? OR google_auth_id = ? LIMIT 1", body.AuthId, body.GoogleAuthId)
+	err = result.StructScan(&userEntity)
 	if err != nil {
 		log.Error(err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, userEntity)
 }
 
 func GoogleOauth2Login(c *gin.Context) {
@@ -150,64 +171,13 @@ func GoogleOauth2Callback(c *gin.Context) {
 	}
 
 	// create user if not exist
-	var userEntity database2.UserEntity
-	var user *userDto
-	var googleAuthResult authResultDto
-	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleOauthUserInfo.Id)
-	err = result.StructScan(&userEntity)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			// create user
-			uid := uuid.New().String()
-			_, err = database2.DB.Exec("INSERT INTO user_master (uid, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?)",
-				uid, googleOauthUserInfo.Id, googleOauthUserInfo.Email, googleOauthUserInfo.Picture)
-			if err != nil {
-				log.Error(err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			user = NewUserDto(uid, nil, nil, nil, &googleOauthUserInfo.Id, &googleOauthUserInfo.Email, &googleOauthUserInfo.Picture)
-		} else {
-			log.Error(err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-	} else {
-		// user already exists on DB
-		user = NewUserDto(
-			*userEntity.UserId,
-			userEntity.Username,
-			userEntity.AuthId,
-			userEntity.AuthProfileImageUrl,
-			userEntity.GoogleAuthId,
-			userEntity.GoogleEmail,
-			userEntity.GoogleProfileImageUrl,
-		)
-	}
+	var googleAuthResult googleAuthResultDto
 
-	if user == nil {
-		log.Error("user is nil")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	if err = user.validate(); err != nil {
-		log.Error(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	googleAuthResult.User = user
+	googleAuthResult.GoogleUserInfo = &googleOauthUserInfo
 	googleAuthResult.Auth = NewAuthTokenDto(
 		*NewAuthToken(token.AccessToken, uuid.New().String(), token.Expiry.Unix()),
 		*NewAuthToken(token.RefreshToken, uuid.New().String(), token.Expiry.Unix()),
 	)
-
-	if err := saveRefreshToken(user.UserId, googleAuthResult.Auth.RefreshToken); err != nil {
-		log.Error(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
 
 	// Send a message to the client's window object
 	marshaled, err := json2.Marshal(googleAuthResult)

@@ -60,6 +60,8 @@ func main() {
 	log.Info("Initializing in-memory database...")
 	database.InMemoryDB = database.NewRedis()
 
+	// TODO :: check redis connection
+
 	// Initialize state service
 	err := state.InitializeService(database.DB)
 	if err != nil {

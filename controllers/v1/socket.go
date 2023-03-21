@@ -156,7 +156,7 @@ func SocketV1(c *gin.Context) {
 	}
 	uid, ok := rawUid.(string)
 	if !ok {
-		log.Error("Error during casting uid to string")
+		log.Errorf("Error during casting uid to string: %v", rawUid)
 		return
 	}
 

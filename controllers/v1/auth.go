@@ -83,8 +83,8 @@ func Signup(c *gin.Context) {
 		if err == sql.ErrNoRows {
 			// create user
 			uid := uuid.New().String()
-			_, err := database.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw) VALUES (?, ?, ?)",
-				uid, body.AuthId, body.EncryptedPassword)
+			_, err := database.DB.Exec("INSERT INTO user_master (uid, auth_id, auth_encrypted_pw, username) VALUES (?, ?, ?, ?)",
+				uid, body.AuthId, body.EncryptedPassword, body.Username)
 			if err != nil {
 				log.Error(err)
 				c.AbortWithStatus(http.StatusInternalServerError)

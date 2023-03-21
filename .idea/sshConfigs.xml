@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig host="52.79.228.100" id="cd9b8fca-7162-48e9-a4ed-951ab333174e" keyPath="D:\desktop\AWS_Certificates\shyunku-main.pem" port="22" customName="shyunku-main" nameFormat="CUSTOM" username="ec2-user" useOpenSSHConfig="true">
+        <option name="customName" value="shyunku-main" />
+      </sshConfig>
+    </configs>
+  </component>
+</project>
