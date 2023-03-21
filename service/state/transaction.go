@@ -20,6 +20,10 @@ func (h Hash) Bytes() []byte {
 	return h[:]
 }
 
+func (h Hash) Hex() string {
+	return hex.EncodeToString(h[:])
+}
+
 func hexToHash(str string) (Hash, error) {
 	// convert hex string to byte array
 	bytes, err := hex.DecodeString(str)
@@ -36,10 +40,10 @@ type Transaction struct {
 	From      string
 	Type      int64
 	Timestamp int64
-	Content   []byte
+	Content   interface{}
 }
 
-func NewTransaction(from string, txType int64, timestamp int64, content []byte) *Transaction {
+func NewTransaction(from string, txType int64, timestamp int64, content interface{}) *Transaction {
 	return &Transaction{
 		From:      from,
 		Type:      txType,
@@ -50,7 +54,7 @@ func NewTransaction(from string, txType int64, timestamp int64, content []byte) 
 
 func (tx *Transaction) Hash() Hash {
 	fieldBytes := make([]byte, 0)
-	values := reflect.ValueOf(tx)
+	values := reflect.ValueOf(*tx)
 
 	for i := 0; i < values.NumField(); i++ {
 		value := values.Field(i)

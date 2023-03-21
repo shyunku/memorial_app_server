@@ -1,9 +1,6 @@
 package state
 
-import (
-	"encoding/json"
-	"memorial_app_server/log"
-)
+import "memorial_app_server/util"
 
 func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
 	state := prevState.Copy()
@@ -22,10 +19,21 @@ func InitialState(prevState *State, tx *Transaction) (*State, error) {
 }
 
 func CreateTask(state *State, tx *Transaction) (*State, error) {
-	var task Task
-	if err := json.Unmarshal(tx.Content, &task); err != nil {
-		log.Fatal("Error decoding JSON: ", err)
+	var body TxCreateTaskBody
+	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
+		return nil, err
 	}
-	state.tasks[task.Id] = task
+
+	state.Tasks[body.Id] = Task{
+		Id:            body.Id,
+		Title:         body.Title,
+		CreatedAt:     body.CreatedAt,
+		DoneAt:        body.DoneAt,
+		Memo:          body.Memo,
+		Done:          body.Done,
+		DueDate:       body.DueDate,
+		RepeatPeriod:  body.RepeatPeriod,
+		RepeatStartAt: body.RepeatStartAt,
+	}
 	return state, nil
 }

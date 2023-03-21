@@ -2,38 +2,42 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"math/big"
+	"fmt"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
-	"memorial_app_server/util"
 	"sync"
+	"time"
 )
 
 type Chain struct {
-	blocks          map[*big.Int]*Block
-	lastBlockNumber *big.Int
+	blocks          map[int64]*Block
+	lastBlockNumber int64
 
 	lock *sync.Mutex
 }
 
 func newStateChain() *Chain {
 	// TODO :: add cleaner as go-routine for database
-	return &Chain{
-		blocks:          make(map[*big.Int]*Block),
-		lastBlockNumber: big.NewInt(0),
+	c := &Chain{
+		blocks:          make(map[int64]*Block),
+		lastBlockNumber: 0,
+		lock:            &sync.Mutex{},
 	}
+	c.blocks[0] = NewBlock(0, NewState(), nil, Hash{})
+	return c
 }
 
-func (c *Chain) GetLastBlockNumber() *big.Int {
+func (c *Chain) GetLastBlockNumber() int64 {
 	return c.lastBlockNumber
 }
 
-func (c *Chain) GetWaitingBlockNumber() *big.Int {
-	return big.NewInt(0).Add(c.lastBlockNumber, big.NewInt(1))
+func (c *Chain) GetWaitingBlockNumber() int64 {
+	return c.lastBlockNumber + 1
 }
 
-func (c *Chain) GetBlockHash(number *big.Int) (Hash, error) {
+func (c *Chain) GetBlockHash(number int64) (Hash, error) {
 	block, err := c.GetBlockByNumber(number)
 	if err != nil {
 		return Hash{}, err
@@ -41,9 +45,9 @@ func (c *Chain) GetBlockHash(number *big.Int) (Hash, error) {
 	return block.Hash(), nil
 }
 
-func (c *Chain) GetBlocksByInterval(start, end *big.Int) ([]*Block, error) {
+func (c *Chain) GetBlocksByInterval(start, end int64) ([]*Block, error) {
 	var blocks []*Block
-	for i := new(big.Int).Set(start); i.Cmp(end) <= 0; i.Add(i, util.Big1) {
+	for i := start; i <= end; i++ {
 		block, err := c.GetBlockByNumber(i)
 		if err != nil {
 			return nil, err
@@ -53,7 +57,11 @@ func (c *Chain) GetBlocksByInterval(start, end *big.Int) ([]*Block, error) {
 	return blocks, nil
 }
 
-func (c *Chain) GetBlockByNumber(number *big.Int) (*Block, error) {
+func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
+	if number < 0 {
+		return nil, fmt.Errorf("invalid block number: %d", number)
+	}
+
 	// find block on cache
 	block, exist := c.blocks[number]
 	if !exist {
@@ -61,24 +69,29 @@ func (c *Chain) GetBlockByNumber(number *big.Int) (*Block, error) {
 		var blockEntity database.BlockEntity
 		err := database.DB.Get(&blockEntity, "SELECT * FROM blocks WHERE block_number = ?", number)
 		if err != nil {
+			log.Error(err)
+			log.Debug("block number: ", number)
 			return nil, err
 		}
 
 		state := NewState()
 		err = state.FromBytes(blockEntity.State)
 		if err != nil {
+			log.Error(err)
 			return nil, err
 		}
 
 		var txEntity database.TransactionEntity
 		err = database.DB.Get(&txEntity, "SELECT * FROM transactions WHERE hash = ?", blockEntity.TxHash)
 		if err != nil {
+			log.Error(err)
 			return nil, err
 		}
 
 		// get previous blockHash
-		prevBlockHash, err := c.GetBlockHash(big.NewInt(0).Sub(number, util.Big1))
+		prevBlockHash, err := c.GetBlockHash(number - 1)
 		if err != nil {
+			log.Error(err)
 			return nil, err
 		}
 
@@ -116,19 +129,19 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 	}
 
 	tx := NewTransaction(*txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
-	block := NewBlock(big.NewInt(*blockEntity.Number), state, tx, prevBlockHash)
+	block := NewBlock(*blockEntity.Number, state, tx, prevBlockHash)
 
 	return block, nil
 }
 
 func (c *Chain) InsertBlock(block *Block) {
-	if _, ok := c.blocks[block.Index]; ok {
+	if _, ok := c.blocks[block.Number]; ok {
 		// already exists
 		return
 	}
-	c.blocks[block.Index] = block
-	if block.Index.Cmp(c.lastBlockNumber) > 0 {
-		c.lastBlockNumber = block.Index
+	c.blocks[block.Number] = block
+	if block.Number > c.lastBlockNumber {
+		c.lastBlockNumber = block.Number
 	}
 }
 
@@ -154,15 +167,9 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 		return nil, err
 	}
 
-	// get previous block
-	prevBlock, err := c.GetBlockByNumber(big.NewInt(0).Sub(c.lastBlockNumber, util.Big1))
-	if err != nil {
-		return nil, err
-	}
-
 	// create new block
-	newBlockNumber := big.NewInt(0).Add(c.lastBlockNumber, big.NewInt(1))
-	newBlock := NewBlock(newBlockNumber, newState, tx, prevBlock.Hash())
+	newBlockNumber := c.lastBlockNumber + 1
+	newBlock := NewBlock(newBlockNumber, newState, tx, lastBlock.Hash())
 
 	// update chain
 	c.InsertBlock(newBlock)
@@ -170,13 +177,29 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 
 	// save block & transaction to database
 	go func() {
+		var marshaledContent []byte
+		if tx.Content != nil {
+			marshaledContent, err = json.Marshal(tx.Content)
+			if err != nil {
+				log.Error(err)
+				return
+			}
+		}
+
+		marshaledState, err := newState.ToBytes()
+		if err != nil {
+			log.Error(err)
+			return
+		}
+
 		ctx, err := database.DB.BeginTxx(context.Background(), nil)
 		if err != nil {
 			log.Error(err)
 			return
 		}
 
-		_, err = ctx.Exec("INSERT INTO transactions (type, from, timestamp, content, hash) VALUES (?, ?, ?, ?, ?)", tx.Type, tx.From, tx.Timestamp, tx.Content, tx.Hash())
+		dateTime := time.Unix(0, tx.Timestamp*int64(time.Millisecond))
+		_, err = ctx.Exec("INSERT INTO transactions (type, `from`, timestamp, content, hash) VALUES (?, ?, ?, ?, ?)", tx.Type, tx.From, dateTime, marshaledContent, tx.Hash().Hex())
 		if err != nil {
 			log.Error(err)
 			err := ctx.Rollback()
@@ -186,11 +209,15 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
-		_, err = database.DB.Exec("INSERT INTO blocks (uid, state, block_number, tx_hash) VALUES (?, ?, ?, ?)", tx.From, newBlock.State, newBlock.Index, newBlock.Tx.Hash())
+		_, err = database.DB.Exec(
+			"INSERT INTO blocks (state, block_number, block_hash, tx_hash) VALUES (?, ?, ?, ?)",
+			marshaledState, newBlock.Number, newBlock.Hash().Hex(), newBlock.Tx.Hash().Hex(),
+		)
 		if err != nil {
 			log.Error(err)
 			err := ctx.Rollback()
 			if err != nil {
+				log.Error(err)
 				return
 			}
 			return

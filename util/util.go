@@ -1,6 +1,7 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -13,6 +14,17 @@ var (
 	Big2 = big.NewInt(2)
 	Big3 = big.NewInt(3)
 )
+
+func InterfaceToStruct(src interface{}, dst interface{}) error {
+	jsonData, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(jsonData, &dst); err != nil {
+		return err
+	}
+	return nil
+}
 
 func ParseDuration(str string) (time.Duration, error) {
 	// Duration string without last character (the unit)

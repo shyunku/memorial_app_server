@@ -8,16 +8,16 @@ import (
 
 // State represents the current state of the application.
 type State struct {
-	tasks      map[int64]Task
-	subTasks   map[int64]Subtask
-	categories map[int64]Category
+	Tasks      map[int64]Task
+	SubTasks   map[int64]Subtask
+	Categories map[int64]Category
 }
 
 func NewState() *State {
 	return &State{
-		tasks:      make(map[int64]Task),
-		subTasks:   make(map[int64]Subtask),
-		categories: make(map[int64]Category),
+		Tasks:      make(map[int64]Task),
+		SubTasks:   make(map[int64]Subtask),
+		Categories: make(map[int64]Category),
 	}
 }
 
@@ -29,9 +29,18 @@ func (s *State) FromBytes(b []byte) error {
 	return nil
 }
 
+func (s *State) ToBytes() ([]byte, error) {
+	// marshal state
+	bytes, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
 func (s *State) Hash() Hash {
 	fieldBytes := make([]byte, 0)
-	values := reflect.ValueOf(s)
+	values := reflect.ValueOf(*s)
 
 	for i := 0; i < values.NumField(); i++ {
 		value := values.Field(i)
@@ -46,23 +55,23 @@ func (s *State) Hash() Hash {
 
 func (s *State) Copy() *State {
 	copiedTasks := make(map[int64]Task)
-	for k, v := range s.tasks {
+	for k, v := range s.Tasks {
 		copiedTasks[k] = v
 	}
 
 	copiedSubTasks := make(map[int64]Subtask)
-	for k, v := range s.subTasks {
+	for k, v := range s.SubTasks {
 		copiedSubTasks[k] = v
 	}
 
 	copiedCategories := make(map[int64]Category)
-	for k, v := range s.categories {
+	for k, v := range s.Categories {
 		copiedCategories[k] = v
 	}
 
 	return &State{
-		tasks:      copiedTasks,
-		subTasks:   copiedSubTasks,
-		categories: copiedCategories,
+		Tasks:      copiedTasks,
+		SubTasks:   copiedSubTasks,
+		Categories: copiedCategories,
 	}
 }

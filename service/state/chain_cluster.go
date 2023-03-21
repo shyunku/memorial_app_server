@@ -2,7 +2,6 @@ package state
 
 import (
 	"github.com/jmoiron/sqlx"
-	"math/big"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 )
@@ -55,7 +54,7 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 	}
 
 	// load states
-	var blockEntities map[*big.Int]database.BlockEntity
+	var blockEntities map[int64]database.BlockEntity
 	blockRows, err := database.DB.Queryx("SELECT * FROM blocks ORDER BY block_number")
 	if err != nil {
 		return err
@@ -65,15 +64,21 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 		// insert blocks
 		var block database.BlockEntity
 		if err := blockRows.StructScan(&block); err != nil {
-			log.Errorf("failed to scan struct of userId %s: %v ", *block.UserId, err)
+			log.Errorf("failed to scan struct of block %s: %v ", *block.BlockHash, err)
 			return err
 		}
-		blockNumber := big.NewInt(*block.Number)
+		blockNumber := *block.Number
 		blockEntities[blockNumber] = block
 	}
 
 	for blockNumber, block := range blockEntities {
-		chain := sm.GetChain(*block.UserId)
+		tx, ok := transactions[*block.TxHash]
+		if !ok {
+			log.Errorf("transaction not found for tx_hash %s: %v", *block.TxHash, err)
+			return err
+		}
+
+		chain := sm.GetChain(tx.From)
 		if _, ok := chain.blocks[blockNumber]; ok {
 			// no need to update
 			continue
@@ -81,7 +86,7 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 
 		newState := NewState()
 		if err := newState.FromBytes(block.State); err != nil {
-			log.Errorf("failed to parse state of userId %s: %v", *block.UserId, err)
+			log.Errorf("failed to parse state of userId %s: %v", tx.From, err)
 			return err
 		}
 
@@ -94,10 +99,10 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 
 		prevBlockHash, err := hexToHash(*block.PrevBlockHash)
 		if err != nil {
-			log.Errorf("failed to parse prev_block_hash of userId %s: %v", *block.UserId, err)
+			log.Errorf("failed to parse prev_block_hash of userId %s: %v", tx.From, err)
 			return err
 		}
-		
+
 		newBlock := NewBlock(blockNumber, newState, tx, prevBlockHash)
 		chain.InsertBlock(newBlock)
 	}

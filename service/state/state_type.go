@@ -13,7 +13,7 @@ type Task struct {
 	RepeatStartAt int64  `json:"repeatStartAt"`
 
 	Subtasks   map[int64]Subtask   `json:"subtasks"`
-	Categories map[string]Category `json:"categories"`
+	Categories map[string]Category `json:"Categories"`
 }
 
 type Subtask struct {

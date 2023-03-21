@@ -2,19 +2,19 @@ package state
 
 import (
 	"crypto/sha256"
-	"math/big"
+	"encoding/binary"
 )
 
 type Block struct {
-	Index         *big.Int
+	Number        int64
 	State         *State
 	Tx            *Transaction // transaction that is currently being applied
 	PrevBlockHash Hash
 }
 
-func NewBlock(index *big.Int, state *State, tx *Transaction, prevBlockHash Hash) *Block {
+func NewBlock(number int64, state *State, tx *Transaction, prevBlockHash Hash) *Block {
 	return &Block{
-		Index:         index,
+		Number:        number,
 		State:         state,
 		Tx:            tx,
 		PrevBlockHash: prevBlockHash,
@@ -23,9 +23,17 @@ func NewBlock(index *big.Int, state *State, tx *Transaction, prevBlockHash Hash)
 
 func (b *Block) Hash() Hash {
 	var bytes []byte
-	bytes = append(bytes, b.Index.Bytes()...)
-	bytes = append(bytes, b.State.Hash().Bytes()...)
-	bytes = append(bytes, b.Tx.Hash().Bytes()...)
+
+	blockNumberBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(blockNumberBytes, uint64(b.Number))
+
+	bytes = append(bytes, blockNumberBytes...)
+	if b.State != nil {
+		bytes = append(bytes, b.State.Hash().Bytes()...)
+	}
+	if b.Tx != nil {
+		bytes = append(bytes, b.Tx.Hash().Bytes()...)
+	}
 	bytes = append(bytes, b.PrevBlockHash.Bytes()...)
 	hash := sha256.Sum256(bytes)
 	return hash

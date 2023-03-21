@@ -6,9 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"math/big"
 	"memorial_app_server/log"
 	"memorial_app_server/service/state"
+	"memorial_app_server/util"
 )
 
 type socketHandler func(socket *UserSocket, uid string, data interface{}) (interface{}, error)
@@ -34,22 +34,21 @@ func test(socket *UserSocket, uid string, data interface{}) (interface{}, error)
 }
 
 func handleTransaction(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
-	request, ok := data.(*TxSocketRequest)
-	if !ok {
-		log.Error("Invalid data type")
+	var request TxSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
 		return nil, fmt.Errorf("invalid request: check format")
 	}
-
 	userChain := state.Chains.GetChain(uid)
 
-	// check if targetBlockNumber is valid
-	targetWaitingBlockNumber := new(big.Int).SetInt64(request.TargetBlockNumber)
+	log.Debug(request)
 
+	// check if targetBlockNumber is valid
 	waitingBlockNumber := userChain.GetWaitingBlockNumber()
-	if targetWaitingBlockNumber.Cmp(waitingBlockNumber) != 0 {
+	if request.TargetBlockNumber != waitingBlockNumber {
 		// different block number
-		log.Error("Invalid target block number")
-		return nil, fmt.Errorf("invalid block number: waiting for block #%s", waitingBlockNumber.String())
+		log.Errorf("Invalid target block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.TargetBlockNumber)
+		return nil, fmt.Errorf("invalid block number: waiting for block #%d", waitingBlockNumber)
 	}
 
 	// check if transaction is valid
@@ -62,7 +61,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	// apply transaction
 	newBlock, err := userChain.ApplyTransaction(tx)
 	if err != nil {
-		log.Error("Error during applying transaction")
+		log.Errorf("Error during applying transaction: %v", err)
 		return nil, fmt.Errorf("failed to apply transaction: %s", err.Error())
 	}
 
@@ -91,7 +90,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 
 func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
 	userChain := state.Chains.GetChain(uid)
-	return userChain.GetWaitingBlockNumber().String(), nil
+	return userChain.GetWaitingBlockNumber(), nil
 }
 
 func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
@@ -103,11 +102,11 @@ func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, 
 
 	userChain := state.Chains.GetChain(uid)
 
-	startBlockNumber := new(big.Int).SetInt64(request.StartBlockNumber)
-	endBlockNumber := new(big.Int).SetInt64(request.EndBlockNumber)
+	startBlockNumber := request.StartBlockNumber
+	endBlockNumber := request.EndBlockNumber
 
 	// check if startBlockNumber is smaller than endBlockNumber
-	if startBlockNumber.Cmp(endBlockNumber) > 0 {
+	if startBlockNumber > endBlockNumber {
 		log.Error("Invalid block number range")
 		return nil, fmt.Errorf("invalid block number range: start block number is greater than end block number")
 	}

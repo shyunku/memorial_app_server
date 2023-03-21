@@ -77,11 +77,10 @@ func (b *UserSocketBundle) GetSocket(connectionId string) *UserSocket {
 /* -------------------------------- Custom -------------------------------- */
 
 type TxSocketRequest struct {
-	Type      int64  `json:"type"`
-	Timestamp int64  `json:"timestamp"`
-	Content   []byte `json:"content"`
-
-	TargetBlockNumber int64 // target block number as string (e.g. "1051240")
+	Type              int64       `json:"type"`
+	Timestamp         int64       `json:"timestamp"`
+	Content           interface{} `json:"content"`
+	TargetBlockNumber int64       `json:"targetBlockNumber"` // target block number as string (e.g. "1051240")
 }
 
 type SyncBlocksSocketRequest struct {
