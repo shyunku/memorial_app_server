@@ -8,16 +8,16 @@ import (
 
 // State represents the current state of the application.
 type State struct {
-	Tasks      map[int64]Task
-	SubTasks   map[int64]Subtask
-	Categories map[int64]Category
+	Tasks      map[string]Task
+	SubTasks   map[string]Subtask
+	Categories map[string]Category
 }
 
 func NewState() *State {
 	return &State{
-		Tasks:      make(map[int64]Task),
-		SubTasks:   make(map[int64]Subtask),
-		Categories: make(map[int64]Category),
+		Tasks:      make(map[string]Task),
+		SubTasks:   make(map[string]Subtask),
+		Categories: make(map[string]Category),
 	}
 }
 
@@ -54,17 +54,17 @@ func (s *State) Hash() Hash {
 }
 
 func (s *State) Copy() *State {
-	copiedTasks := make(map[int64]Task)
+	copiedTasks := make(map[string]Task)
 	for k, v := range s.Tasks {
 		copiedTasks[k] = v
 	}
 
-	copiedSubTasks := make(map[int64]Subtask)
+	copiedSubTasks := make(map[string]Subtask)
 	for k, v := range s.SubTasks {
 		copiedSubTasks[k] = v
 	}
 
-	copiedCategories := make(map[int64]Category)
+	copiedCategories := make(map[string]Category)
 	for k, v := range s.Categories {
 		copiedCategories[k] = v
 	}

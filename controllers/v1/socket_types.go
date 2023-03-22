@@ -74,6 +74,10 @@ func (b *UserSocketBundle) GetSocket(connectionId string) *UserSocket {
 	return b.sockets[connectionId]
 }
 
+func (b *UserSocketBundle) GetSize() int {
+	return len(b.sockets)
+}
+
 /* -------------------------------- Custom -------------------------------- */
 
 type TxSocketRequest struct {

@@ -6,9 +6,10 @@ import (
 )
 
 type Block struct {
-	Number        int64
-	State         *State
-	Tx            *Transaction // transaction that is currently being applied
+	Number int64 `json:"number"`
+	State  *State
+	// transaction that is currently being applied
+	Tx            *Transaction `json:"tx"`
 	PrevBlockHash Hash
 }
 

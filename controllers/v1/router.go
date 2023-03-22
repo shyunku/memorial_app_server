@@ -20,6 +20,7 @@ func UseRouterV1(r *gin.Engine) {
 	UseAuthRouter(g)
 	UseGoogleAuthRouter(g)
 	UseTokenRouter(g)
+	UseTestRouter(g) // comment this on production
 	UseSocketRouter(g)
 }
 
@@ -98,7 +99,7 @@ func AuthMiddleware(c *gin.Context) {
 		var userEntity database.UserEntity
 		err = database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleTokenInfo.UserId).StructScan(&userEntity)
 		if err != nil {
-			if err == sql.ErrNoRows{
+			if err == sql.ErrNoRows {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "unknown user"})
 				return
 			} else {

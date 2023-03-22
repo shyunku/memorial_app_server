@@ -37,10 +37,10 @@ func hexToHash(str string) (Hash, error) {
 }
 
 type Transaction struct {
-	From      string
-	Type      int64
-	Timestamp int64
-	Content   interface{}
+	From      string      `json:"from"`
+	Type      int64       `json:"type"`
+	Timestamp int64       `json:"timestamp"`
+	Content   interface{} `json:"content"`
 }
 
 func NewTransaction(from string, txType int64, timestamp int64, content interface{}) *Transaction {

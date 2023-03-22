@@ -94,9 +94,9 @@ func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (inter
 }
 
 func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
-	request, ok := data.(*SyncBlocksSocketRequest)
-	if !ok {
-		log.Error("Invalid data type")
+	var request SyncBlocksSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
 		return nil, fmt.Errorf("invalid request: check format")
 	}
 
@@ -194,7 +194,10 @@ func SocketV1(c *gin.Context) {
 	})
 
 	defer func() {
-		socketBundle.RemoveSocket("access token")
+		socketBundle.RemoveSocket(connectionId)
+		if socketBundle.GetSize() == 0 {
+			delete(socketBundles, uid)
+		}
 		conn.Close()
 	}()
 

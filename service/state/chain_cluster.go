@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"github.com/jmoiron/sqlx"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
@@ -33,7 +34,7 @@ func (sm *ChainCluster) GetChain(userId string) *Chain {
 
 func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 	// load transactions
-	var transactions map[string]*Transaction
+	transactions := make(map[string]*Transaction)
 	txRows, err := db.Queryx("SELECT * FROM transactions")
 	if err != nil {
 		return err
@@ -45,16 +46,22 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			log.Errorf("failed to scan struct of transaction %v ", err)
 			return err
 		}
+
+		var decodedContent interface{}
+		if err := json.Unmarshal(tx.Content, &decodedContent); err != nil {
+			return err
+		}
+
 		transactions[*tx.Hash] = NewTransaction(
 			*tx.From,
 			*tx.Type,
 			*tx.Timestamp,
-			tx.Content,
+			decodedContent,
 		)
 	}
 
 	// load states
-	var blockEntities map[int64]database.BlockEntity
+	blockEntities := make(map[int64]database.BlockEntity)
 	blockRows, err := database.DB.Queryx("SELECT * FROM blocks ORDER BY block_number")
 	if err != nil {
 		return err
@@ -79,7 +86,7 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 		}
 
 		chain := sm.GetChain(tx.From)
-		if _, ok := chain.blocks[blockNumber]; ok {
+		if _, ok := chain.Blocks[blockNumber]; ok {
 			// no need to update
 			continue
 		}
@@ -97,10 +104,16 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			return err
 		}
 
-		prevBlockHash, err := hexToHash(*block.PrevBlockHash)
-		if err != nil {
-			log.Errorf("failed to parse prev_block_hash of userId %s: %v", tx.From, err)
-			return err
+		var prevBlockHash Hash
+		if block.PrevBlockHash == nil {
+			log.Warnf("prev_block_hash is nil for block %s", *block.BlockHash)
+			prevBlockHash = Hash{}
+		} else {
+			prevBlockHash, err = hexToHash(*block.PrevBlockHash)
+			if err != nil {
+				log.Errorf("failed to parse prev_block_hash of userId %s: %v", tx.From, err)
+				return err
+			}
 		}
 
 		newBlock := NewBlock(blockNumber, newState, tx, prevBlockHash)

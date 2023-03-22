@@ -35,5 +35,13 @@ func CreateTask(state *State, tx *Transaction) (*State, error) {
 		RepeatPeriod:  body.RepeatPeriod,
 		RepeatStartAt: body.RepeatStartAt,
 	}
+
+	// update next of previous
+	if body.PrevTaskId != "" {
+		prevTask := state.Tasks[body.PrevTaskId]
+		prevTask.Next = body.Id
+		state.Tasks[body.PrevTaskId] = prevTask
+	}
+
 	return state, nil
 }

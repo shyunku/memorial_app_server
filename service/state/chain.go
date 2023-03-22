@@ -8,33 +8,36 @@ import (
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 	"sync"
-	"time"
 )
 
 type Chain struct {
-	blocks          map[int64]*Block
-	lastBlockNumber int64
-
-	lock *sync.Mutex
+	Blocks          map[int64]*Block `json:"blocks"`
+	LastBlockNumber int64            `json:"last_block_number"`
+	lock            *sync.Mutex
 }
 
 func newStateChain() *Chain {
 	// TODO :: add cleaner as go-routine for database
 	c := &Chain{
-		blocks:          make(map[int64]*Block),
-		lastBlockNumber: 0,
+		Blocks:          make(map[int64]*Block),
+		LastBlockNumber: 0,
 		lock:            &sync.Mutex{},
 	}
-	c.blocks[0] = NewBlock(0, NewState(), nil, Hash{})
+	newBlock := NewBlock(0, NewState(), nil, Hash{})
+	c.Blocks[0] = newBlock
 	return c
 }
 
+func (c *Chain) GetLastState() *State {
+	return c.Blocks[c.LastBlockNumber].State
+}
+
 func (c *Chain) GetLastBlockNumber() int64 {
-	return c.lastBlockNumber
+	return c.LastBlockNumber
 }
 
 func (c *Chain) GetWaitingBlockNumber() int64 {
-	return c.lastBlockNumber + 1
+	return c.LastBlockNumber + 1
 }
 
 func (c *Chain) GetBlockHash(number int64) (Hash, error) {
@@ -63,7 +66,7 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 	}
 
 	// find block on cache
-	block, exist := c.blocks[number]
+	block, exist := c.Blocks[number]
 	if !exist {
 		// find block on database
 		var blockEntity database.BlockEntity
@@ -135,13 +138,13 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 }
 
 func (c *Chain) InsertBlock(block *Block) {
-	if _, ok := c.blocks[block.Number]; ok {
+	if _, ok := c.Blocks[block.Number]; ok {
 		// already exists
 		return
 	}
-	c.blocks[block.Number] = block
-	if block.Number > c.lastBlockNumber {
-		c.lastBlockNumber = block.Number
+	c.Blocks[block.Number] = block
+	if block.Number > c.LastBlockNumber {
+		c.LastBlockNumber = block.Number
 	}
 }
 
@@ -150,7 +153,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	var lastState *State
 	c.lock.Lock()
 
-	lastBlock, exists := c.blocks[c.lastBlockNumber]
+	lastBlock, exists := c.Blocks[c.LastBlockNumber]
 	if !exists {
 		lastState = NewState()
 	} else {
@@ -168,7 +171,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	}
 
 	// create new block
-	newBlockNumber := c.lastBlockNumber + 1
+	newBlockNumber := c.LastBlockNumber + 1
 	newBlock := NewBlock(newBlockNumber, newState, tx, lastBlock.Hash())
 
 	// update chain
@@ -198,8 +201,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
-		dateTime := time.Unix(0, tx.Timestamp*int64(time.Millisecond))
-		_, err = ctx.Exec("INSERT INTO transactions (type, `from`, timestamp, content, hash) VALUES (?, ?, ?, ?, ?)", tx.Type, tx.From, dateTime, marshaledContent, tx.Hash().Hex())
+		_, err = ctx.Exec("INSERT INTO transactions (type, `from`, timestamp, content, hash) VALUES (?, ?, ?, ?, ?)", tx.Type, tx.From, tx.Timestamp, marshaledContent, tx.Hash().Hex())
 		if err != nil {
 			log.Error(err)
 			err := ctx.Rollback()
@@ -209,9 +211,13 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
-		_, err = database.DB.Exec(
-			"INSERT INTO blocks (state, block_number, block_hash, tx_hash) VALUES (?, ?, ?, ?)",
-			marshaledState, newBlock.Number, newBlock.Hash().Hex(), newBlock.Tx.Hash().Hex(),
+		_, err = ctx.Exec(
+			"INSERT INTO blocks (state, block_number, block_hash, tx_hash, prev_block_hash) VALUES (?, ?, ?, ?, ?)",
+			marshaledState,
+			newBlock.Number,
+			newBlock.Hash().Hex(),
+			newBlock.Tx.Hash().Hex(),
+			newBlock.PrevBlockHash.Hex(),
 		)
 		if err != nil {
 			log.Error(err)
