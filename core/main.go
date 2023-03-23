@@ -7,6 +7,7 @@ import (
 	"memorial_app_server/service/database"
 	"memorial_app_server/service/state"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -35,6 +36,7 @@ func main() {
 		"JWT_ACCESS_EXPIRE",
 		"JWT_REFRESH_SECRET",
 		"JWT_REFRESH_EXPIRE",
+		"STATE_SCHEME_VERSION",
 	}
 	missingVariables := make([]string, 0)
 	for _, key := range envCheckKeys {
@@ -48,6 +50,16 @@ func main() {
 		log.Error("Missing environment variables: ", missingVarKeys)
 		os.Exit(-1)
 	}
+
+	// Setting extra environment variables
+	// scheme version
+	rawSchemeVersion := os.Getenv("STATE_SCHEME_VERSION")
+	parsedSchemeVersion, err := strconv.Atoi(rawSchemeVersion)
+	if err != nil {
+		log.Error("Invalid scheme version: ", rawSchemeVersion)
+		os.Exit(-1)
+	}
+	state.SchemeVersion = parsedSchemeVersion
 
 	// Initialize database
 	log.Info("Initializing database...")
@@ -63,8 +75,7 @@ func main() {
 	// TODO :: check redis connection
 
 	// Initialize state service
-	err := state.InitializeService(database.DB)
-	if err != nil {
+	if err = state.InitializeService(database.DB); err != nil {
 		log.Error(err)
 		os.Exit(-3)
 	}

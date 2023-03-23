@@ -8,12 +8,12 @@ type Task struct {
 	Memo          string `json:"memo"`
 	Done          bool   `json:"done"`
 	DueDate       int64  `json:"dueDate"`
-	Next          string  `json:"next"`
+	Next          string `json:"next"`
 	RepeatPeriod  string `json:"repeatPeriod"`
 	RepeatStartAt int64  `json:"repeatStartAt"`
 
-	Subtasks   map[int64]Subtask   `json:"subtasks"`
-	Categories map[string]Category `json:"Categories"`
+	Subtasks   map[string]Subtask `json:"subtasks"`
+	Categories map[string]bool   `json:"categories"`
 }
 
 type Subtask struct {
@@ -23,12 +23,12 @@ type Subtask struct {
 	DoneAt    int64  `json:"doneAt"`
 	DueDate   int64  `json:"dueDate"`
 	Done      bool   `json:"done"`
-	TaskId    int64  `json:"tid"`
 }
 
 type Category struct {
-	Id          string `json:"cid"`
-	Title       string `json:"title"`
-	EncryptedPw string `json:"encryptedPw"`
-	Color       string `json:"color"`
+	Id     string `json:"cid"`
+	Title  string `json:"title"`
+	Secret bool   `json:"secret"`
+	Locked bool   `json:"locked"`
+	Color  string `json:"color"`
 }

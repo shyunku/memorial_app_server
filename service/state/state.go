@@ -3,6 +3,8 @@ package state
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"memorial_app_server/log"
 	"reflect"
 )
 
@@ -36,6 +38,80 @@ func (s *State) ToBytes() ([]byte, error) {
 		return nil, err
 	}
 	return bytes, nil
+}
+
+func (s *State) Validate() error {
+	log.Debug("Validating new state...")
+	// validate tasks links
+	type taskNode struct {
+		Id     string
+		NextId string
+		PrevId string
+	}
+
+	taskNodes := make(map[string]taskNode)
+	for _, task := range s.Tasks {
+		taskNodes[task.Id] = taskNode{
+			Id:     task.Id,
+			NextId: task.Next,
+		}
+	}
+
+	// rewrite task nodes with prev
+	for _, node := range taskNodes {
+		if node.NextId != "" {
+			nextNode := taskNodes[node.NextId]
+			nextNode.PrevId = node.Id
+			taskNodes[node.NextId] = nextNode
+		}
+	}
+
+	// find first task
+	var firstTaskId string
+	for _, node := range taskNodes {
+		if node.PrevId == "" {
+			firstTaskId = node.Id
+			break
+		}
+	}
+
+	sortedTasks := make(map[string]taskNode)
+	if firstTaskId != "" {
+		// first task exists, iterate through tasks
+		iterator := taskNodes[firstTaskId]
+		for {
+			sortedTasks[iterator.Id] = iterator
+			if iterator.NextId == "" {
+				break
+			}
+			iterator = taskNodes[iterator.NextId]
+		}
+	}
+
+	// check if all tasks are sorted
+	if len(sortedTasks) != len(s.Tasks) {
+		// collect unsorted task ids
+		unsortedTaskIds := make([]string, 0)
+		for _, task := range s.Tasks {
+			_, exists := sortedTasks[task.Id]
+			if !exists {
+				unsortedTaskIds = append(unsortedTaskIds, task.Id)
+			}
+		}
+		return fmt.Errorf("tasks are not sorted: %v", unsortedTaskIds)
+	}
+
+	// check if tasks' categories exists
+	for _, task := range s.Tasks {
+		for categoryId, category := range task.Categories {
+			_, exists := s.Categories[categoryId]
+			if !exists {
+				return fmt.Errorf("task %s has non-existing category %s", task.Id, category)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *State) Hash() Hash {

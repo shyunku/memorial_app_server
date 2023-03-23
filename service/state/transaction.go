@@ -12,6 +12,9 @@ var (
 	ErrInvalidTxType = errors.New("invalid transaction type")
 	ErrInvalidTxFrom = errors.New("invalid transaction from")
 	ErrInvalidTxTime = errors.New("invalid transaction time")
+	ErrStateMismatch = errors.New("state mismatch")
+
+	SchemeVersion = 0
 )
 
 type Hash [32]byte
@@ -37,6 +40,7 @@ func hexToHash(str string) (Hash, error) {
 }
 
 type Transaction struct {
+	Version   int64       `json:"version"`
 	From      string      `json:"from"`
 	Type      int64       `json:"type"`
 	Timestamp int64       `json:"timestamp"`
@@ -44,7 +48,12 @@ type Transaction struct {
 }
 
 func NewTransaction(from string, txType int64, timestamp int64, content interface{}) *Transaction {
+	if SchemeVersion == 0 {
+		panic("txType cannot be 0, maybe env is not set correctly")
+	}
+
 	return &Transaction{
+		Version:   1,
 		From:      from,
 		Type:      txType,
 		Timestamp: timestamp,
@@ -69,7 +78,7 @@ func (tx *Transaction) Hash() Hash {
 
 func (tx *Transaction) Validate() error {
 	// type validation
-	if tx.Type < 0 || tx.Type > 1 {
+	if tx.Type < 1 || tx.Type > 30 {
 		return ErrInvalidTxType
 	}
 	// from validation

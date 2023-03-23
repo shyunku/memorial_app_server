@@ -150,6 +150,7 @@ func (c *Chain) InsertBlock(block *Block) {
 
 // ApplyTransaction applies a transaction to build the new state
 func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
+	log.Debug("Applying transaction...")
 	var lastState *State
 	c.lock.Lock()
 
@@ -167,6 +168,11 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	// apply transaction
 	newState, err := ExecuteTransaction(lastState, tx)
 	if err != nil {
+		return nil, err
+	}
+
+	// validate new state
+	if err := newState.Validate(); err != nil {
 		return nil, err
 	}
 

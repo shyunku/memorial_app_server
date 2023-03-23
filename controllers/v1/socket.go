@@ -122,13 +122,13 @@ func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, 
 }
 
 func commitTransactions(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
-	request, ok := data.(*CommitTxBundleSocketRequest)
-	if !ok {
-		log.Error("Invalid data type")
+	var request CommitTxBundleSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
 		return nil, fmt.Errorf("invalid request: check format")
 	}
 
-	for _, txReq := range *request {
+	for _, txReq := range request {
 		_, err := handleTransaction(socket, uid, txReq)
 		if err != nil {
 			log.Error("Error during handling transaction: ", err)
