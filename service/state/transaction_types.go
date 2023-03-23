@@ -42,32 +42,10 @@ type TxUpdateTaskMemoBody struct {
 	Memo string `json:"memo"`
 }
 
-type TxAddCategoryBody struct {
-	Id     string `json:"cid"`
-	Title  string `json:"title"`
-	Secret bool   `json:"secret"`
-	Locked bool   `json:"locked"`
-	Color  string `json:"color"`
-}
-
-type TxDeleteCategoryBody struct {
-	Id string `json:"cid"`
-}
-
-type TxAddTaskCategoryBody struct {
-	TaskId     string `json:"tid"`
-	CategoryId string `json:"cid"`
-}
-
 type TxUpdateTaskDoneBody struct {
 	TaskId string `json:"tid"`
 	Done   bool   `json:"done"`
 	DoneAt int64  `json:"doneAt"`
-}
-
-type TxDeleteTaskCategoryBody struct {
-	TaskId     string `json:"tid"`
-	CategoryId string `json:"cid"`
 }
 
 type TxUpdateTaskRepeatPeriodBody struct {
@@ -75,7 +53,17 @@ type TxUpdateTaskRepeatPeriodBody struct {
 	RepeatPeriod string `json:"repeatPeriod"`
 }
 
-type TxAddSubtaskBody struct {
+type TxAddTaskCategoryBody struct {
+	TaskId     string `json:"tid"`
+	CategoryId string `json:"cid"`
+}
+
+type TxDeleteTaskCategoryBody struct {
+	TaskId     string `json:"tid"`
+	CategoryId string `json:"cid"`
+}
+
+type TxCreateSubtaskBody struct {
 	TaskId    string `json:"tid"`
 	SubtaskId string `json:"sid"`
 	Title     string `json:"title"`
@@ -107,4 +95,16 @@ type TxUpdateSubtaskDoneBody struct {
 	SubtaskId string `json:"sid"`
 	Done      bool   `json:"done"`
 	DoneAt    int64  `json:"doneAt"`
+}
+
+type TxCreateCategoryBody struct {
+	Id     string `json:"cid"`
+	Title  string `json:"title"`
+	Secret bool   `json:"secret"`
+	Locked bool   `json:"locked"`
+	Color  string `json:"color"`
+}
+
+type TxDeleteCategoryBody struct {
+	Id string `json:"cid"`
 }

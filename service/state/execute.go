@@ -9,23 +9,27 @@ import (
 const (
 	TxUnknown = iota
 	TxInitialize
+
 	TxCreateTask
 	TxDeleteTask
 	TxUpdateTaskOrder
 	TxUpdateTaskTitle
 	TxUpdateTaskDueDate
 	TxUpdateTaskMemo
-	TxAddCategory
-	TxDeleteCategory
-	TxAddTaskCategory
 	TxUpdateTaskDone
-	TxDeleteTaskCategory
 	TxUpdateTaskRepeatPeriod
-	TxAddSubtask
+
+	TxAddTaskCategory
+	TxDeleteTaskCategory
+
+	TxCreateSubtask
 	TxDeleteSubtask
 	TxUpdateSubtaskTitle
 	TxUpdateSubtaskDueDate
 	TxUpdateSubtaskDone
+
+	TxCreateCategory
+	TxDeleteCategory
 )
 
 func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
@@ -45,20 +49,16 @@ func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
 		return UpdateTaskDueDate(state, tx)
 	case TxUpdateTaskMemo:
 		return UpdateTaskMemo(state, tx)
-	case TxAddCategory:
-		return AddCategory(state, tx)
-	case TxDeleteCategory:
-		return DeleteCategory(state, tx)
-	case TxAddTaskCategory:
-		return AddTaskCategory(state, tx)
 	case TxUpdateTaskDone:
 		return UpdateTaskDone(state, tx)
-	case TxDeleteTaskCategory:
-		return DeleteTaskCategory(state, tx)
 	case TxUpdateTaskRepeatPeriod:
 		return UpdateTaskRepeatPeriod(state, tx)
-	case TxAddSubtask:
-		return AddSubtask(state, tx)
+	case TxAddTaskCategory:
+		return AddTaskCategory(state, tx)
+	case TxDeleteTaskCategory:
+		return DeleteTaskCategory(state, tx)
+	case TxCreateSubtask:
+		return CreateSubtask(state, tx)
 	case TxDeleteSubtask:
 		return DeleteSubtask(state, tx)
 	case TxUpdateSubtaskTitle:
@@ -67,6 +67,10 @@ func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
 		return UpdateSubtaskDueDate(state, tx)
 	case TxUpdateSubtaskDone:
 		return UpdateSubtaskDone(state, tx)
+	case TxCreateCategory:
+		return CreateCategory(state, tx)
+	case TxDeleteCategory:
+		return DeleteCategory(state, tx)
 	default:
 		return nil, ErrInvalidTxType
 	}
@@ -249,44 +253,40 @@ func UpdateTaskMemo(state *State, tx *Transaction) (*State, error) {
 	return state, nil
 }
 
-func AddCategory(state *State, tx *Transaction) (*State, error) {
-	var body TxAddCategoryBody
+func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
+	var body TxUpdateTaskDoneBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	state.Categories[body.Id] = Category{
-		Id:     body.Id,
-		Title:  body.Title,
-		Secret: body.Secret,
-		Locked: body.Locked,
-		Color:  body.Color,
+	task, ok := state.Tasks[body.TaskId]
+	if !ok {
+		log.Warnf("updating done task(%s) not found", body.TaskId)
+		return nil, ErrStateMismatch
 	}
+
+	task.Done = body.Done
+	task.DoneAt = body.DoneAt
+	state.Tasks[body.TaskId] = task
 
 	return state, nil
 }
 
-func DeleteCategory(state *State, tx *Transaction) (*State, error) {
-	var body TxDeleteCategoryBody
+func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
+	var body TxUpdateTaskRepeatPeriodBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	// if tasks that contains category exists, return error
-	alreadyUsing := 0
-	for _, task := range state.Tasks {
-		for categoryId, _ := range task.Categories {
-			if categoryId == body.Id {
-				alreadyUsing++
-				break
-			}
-		}
-	}
-	if alreadyUsing > 0 {
-		return nil, fmt.Errorf("category is already used by %d tasks", alreadyUsing)
+	task, ok := state.Tasks[body.TaskId]
+	if !ok {
+		log.Warnf("updating repeatPeriod task(%s) not found", body.TaskId)
+		return nil, ErrStateMismatch
 	}
 
-	delete(state.Categories, body.Id)
+	task.RepeatPeriod = body.RepeatPeriod
+	state.Tasks[body.TaskId] = task
+
 	return state, nil
 }
 
@@ -309,25 +309,6 @@ func AddTaskCategory(state *State, tx *Transaction) (*State, error) {
 	}
 
 	task.Categories[body.CategoryId] = true
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
-}
-
-func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
-	var body TxUpdateTaskDoneBody
-	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
-		return nil, err
-	}
-
-	task, ok := state.Tasks[body.TaskId]
-	if !ok {
-		log.Warnf("updating done task(%s) not found", body.TaskId)
-		return nil, ErrStateMismatch
-	}
-
-	task.Done = body.Done
-	task.DoneAt = body.DoneAt
 	state.Tasks[body.TaskId] = task
 
 	return state, nil
@@ -357,26 +338,8 @@ func DeleteTaskCategory(state *State, tx *Transaction) (*State, error) {
 	return state, nil
 }
 
-func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
-	var body TxUpdateTaskRepeatPeriodBody
-	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
-		return nil, err
-	}
-
-	task, ok := state.Tasks[body.TaskId]
-	if !ok {
-		log.Warnf("updating repeatPeriod task(%s) not found", body.TaskId)
-		return nil, ErrStateMismatch
-	}
-
-	task.RepeatPeriod = body.RepeatPeriod
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
-}
-
-func AddSubtask(state *State, tx *Transaction) (*State, error) {
-	var body TxAddSubtaskBody
+func CreateSubtask(state *State, tx *Transaction) (*State, error) {
+	var body TxCreateSubtaskBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
@@ -497,5 +460,46 @@ func UpdateSubtaskDone(state *State, tx *Transaction) (*State, error) {
 	task.Subtasks[body.SubtaskId] = subtask
 	state.Tasks[body.TaskId] = task
 
+	return state, nil
+}
+
+func CreateCategory(state *State, tx *Transaction) (*State, error) {
+	var body TxCreateCategoryBody
+	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
+		return nil, err
+	}
+
+	state.Categories[body.Id] = Category{
+		Id:     body.Id,
+		Title:  body.Title,
+		Secret: body.Secret,
+		Locked: body.Locked,
+		Color:  body.Color,
+	}
+
+	return state, nil
+}
+
+func DeleteCategory(state *State, tx *Transaction) (*State, error) {
+	var body TxDeleteCategoryBody
+	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
+		return nil, err
+	}
+
+	// if tasks that contains category exists, return error
+	alreadyUsing := 0
+	for _, task := range state.Tasks {
+		for categoryId, _ := range task.Categories {
+			if categoryId == body.Id {
+				alreadyUsing++
+				break
+			}
+		}
+	}
+	if alreadyUsing > 0 {
+		return nil, fmt.Errorf("category is already used by %d tasks", alreadyUsing)
+	}
+
+	delete(state.Categories, body.Id)
 	return state, nil
 }
