@@ -3,9 +3,8 @@ package state
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	json2 "encoding/json"
 	"errors"
-	"memorial_app_server/libs/json"
-	"reflect"
 )
 
 var (
@@ -39,40 +38,43 @@ func hexToHash(str string) (Hash, error) {
 	return hash, nil
 }
 
-type Transaction struct {
-	Version   int64       `json:"version"`
-	From      string      `json:"from"`
+type rawTransaction struct {
+	Version   int       `json:"version"`
 	Type      int64       `json:"type"`
 	Timestamp int64       `json:"timestamp"`
 	Content   interface{} `json:"content"`
 }
 
-func NewTransaction(from string, txType int64, timestamp int64, content interface{}) *Transaction {
-	if SchemeVersion == 0 {
-		panic("txType cannot be 0, maybe env is not set correctly")
-	}
+type Transaction struct {
+	Version   int       `json:"version"`
+	From      string      `json:"from"`
+	Type      int64       `json:"type"`
+	Timestamp int64       `json:"timestamp"`
+	Content   interface{} `json:"content"`
+	Hash      Hash        `json:"hash"`
+}
 
-	return &Transaction{
-		Version:   1,
+func NewTransaction(version int, from string, txType int64, timestamp int64, content interface{}) *Transaction {
+	tx := &Transaction{
+		Version:   version,
 		From:      from,
 		Type:      txType,
 		Timestamp: timestamp,
 		Content:   content,
 	}
+	tx.Hash = tx.CalcHash()
+	return tx
 }
 
-func (tx *Transaction) Hash() Hash {
-	fieldBytes := make([]byte, 0)
-	values := reflect.ValueOf(*tx)
-
-	for i := 0; i < values.NumField(); i++ {
-		value := values.Field(i)
-		raw := value.Interface()
-		bytes, _ := json.Marshal(raw)
-		fieldBytes = append(fieldBytes, bytes...)
+func (tx *Transaction) CalcHash() Hash {
+	rawTransaction := rawTransaction{
+		Version:   tx.Version,
+		Type:      tx.Type,
+		Timestamp: tx.Timestamp,
+		Content:   tx.Content,
 	}
-
-	hash := sha256.Sum256(fieldBytes)
+	bytes, _ := json2.Marshal(rawTransaction)
+	hash := sha256.Sum256(bytes)
 	return hash
 }
 

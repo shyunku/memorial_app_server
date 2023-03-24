@@ -14,6 +14,7 @@ type Chain struct {
 	Blocks          map[int64]*Block `json:"blocks"`
 	LastBlockNumber int64            `json:"last_block_number"`
 	lock            *sync.Mutex
+	dbLock          *sync.Mutex
 }
 
 func newStateChain() *Chain {
@@ -22,6 +23,7 @@ func newStateChain() *Chain {
 		Blocks:          make(map[int64]*Block),
 		LastBlockNumber: 0,
 		lock:            &sync.Mutex{},
+		dbLock:          &sync.Mutex{},
 	}
 	newBlock := NewBlock(0, NewState(), nil, Hash{})
 	c.Blocks[0] = newBlock
@@ -98,7 +100,7 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 			return nil, err
 		}
 
-		tx := NewTransaction(*txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
+		tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
 		block = NewBlock(number, state, tx, prevBlockHash)
 		c.InsertBlock(block)
 	}
@@ -131,10 +133,42 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 		return nil, err
 	}
 
-	tx := NewTransaction(*txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
+	tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
 	block := NewBlock(*blockEntity.Number, state, tx, prevBlockHash)
 
 	return block, nil
+}
+
+func (c *Chain) DeleteBlockByInterval(start, end int64) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// delete in cache
+	for i := start; i <= end; i++ {
+		delete(c.Blocks, i)
+	}
+
+	// delete in database
+	_, err := database.DB.Exec("DELETE FROM blocks WHERE block_number >= ? AND block_number <= ?", start, end)
+	if err != nil {
+		return err
+	}
+
+	// check if block exists after end in cache
+	remain := 0
+	for _, block := range c.Blocks {
+		if block.Number > end {
+			remain++
+		}
+	}
+	if remain > 0 {
+		log.Errorf("remain %d blocks in cache after deleting blocks from %d to %d", remain, start, end)
+	}
+
+	// update last block number
+	c.LastBlockNumber = start - 1
+
+	return nil
 }
 
 func (c *Chain) InsertBlock(block *Block) {
@@ -153,6 +187,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	log.Debug("Applying transaction...")
 	var lastState *State
 	c.lock.Lock()
+	defer c.lock.Unlock()
 
 	lastBlock, exists := c.Blocks[c.LastBlockNumber]
 	if !exists {
@@ -165,8 +200,10 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 		return nil, errors.New("last state is nil")
 	}
 
+	newBlockNumber := c.LastBlockNumber + 1
+
 	// apply transaction
-	newState, err := ExecuteTransaction(lastState, tx)
+	newState, err := ExecuteTransaction(lastState, tx, newBlockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -177,15 +214,14 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	}
 
 	// create new block
-	newBlockNumber := c.LastBlockNumber + 1
 	newBlock := NewBlock(newBlockNumber, newState, tx, lastBlock.Hash())
 
 	// update chain
 	c.InsertBlock(newBlock)
-	c.lock.Unlock()
+	log.Debugf("block %d inserted to cache successfully", newBlock.Number)
 
 	// save block & transaction to database
-	go func() {
+	func() {
 		var marshaledContent []byte
 		if tx.Content != nil {
 			marshaledContent, err = json.Marshal(tx.Content)
@@ -201,13 +237,15 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
+		c.dbLock.Lock()
+		defer c.dbLock.Unlock()
 		ctx, err := database.DB.BeginTxx(context.Background(), nil)
 		if err != nil {
 			log.Error(err)
 			return
 		}
 
-		_, err = ctx.Exec("INSERT INTO transactions (type, `from`, timestamp, content, hash) VALUES (?, ?, ?, ?, ?)", tx.Type, tx.From, tx.Timestamp, marshaledContent, tx.Hash().Hex())
+		_, err = ctx.Exec("INSERT INTO transactions (version, type, `from`, timestamp, content, hash) VALUES (?, ?, ?, ?, ?, ?)", tx.Version, tx.Type, tx.From, tx.Timestamp, marshaledContent, tx.Hash.Hex())
 		if err != nil {
 			log.Error(err)
 			err := ctx.Rollback()
@@ -222,7 +260,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			marshaledState,
 			newBlock.Number,
 			newBlock.Hash().Hex(),
-			newBlock.Tx.Hash().Hex(),
+			newBlock.Tx.Hash.Hex(),
 			newBlock.PrevBlockHash.Hex(),
 		)
 		if err != nil {
@@ -241,7 +279,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
-		log.Debug("transaction/block saved successfully")
+		log.Debugf("transaction/block %d saved successfully", newBlock.Number)
 	}()
 
 	return newBlock, nil

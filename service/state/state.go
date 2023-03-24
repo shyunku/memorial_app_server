@@ -10,15 +10,13 @@ import (
 
 // State represents the current state of the application.
 type State struct {
-	Tasks      map[string]Task
-	SubTasks   map[string]Subtask
-	Categories map[string]Category
+	Tasks      map[string]Task     `json:"tasks"`
+	Categories map[string]Category `json:"categories"`
 }
 
 func NewState() *State {
 	return &State{
 		Tasks:      make(map[string]Task),
-		SubTasks:   make(map[string]Subtask),
 		Categories: make(map[string]Category),
 	}
 }
@@ -135,11 +133,6 @@ func (s *State) Copy() *State {
 		copiedTasks[k] = v
 	}
 
-	copiedSubTasks := make(map[string]Subtask)
-	for k, v := range s.SubTasks {
-		copiedSubTasks[k] = v
-	}
-
 	copiedCategories := make(map[string]Category)
 	for k, v := range s.Categories {
 		copiedCategories[k] = v
@@ -147,7 +140,6 @@ func (s *State) Copy() *State {
 
 	return &State{
 		Tasks:      copiedTasks,
-		SubTasks:   copiedSubTasks,
 		Categories: copiedCategories,
 	}
 }

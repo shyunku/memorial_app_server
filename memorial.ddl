@@ -21,6 +21,7 @@ create table transactions
 (
     txid int auto_increment
         primary key,
+    version int not null,
     type int not null,
     `from` varchar(255) not null,
     timestamp bigint not null,

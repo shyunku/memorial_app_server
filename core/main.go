@@ -60,6 +60,9 @@ func main() {
 		os.Exit(-1)
 	}
 	state.SchemeVersion = parsedSchemeVersion
+	if state.SchemeVersion == 0 {
+		panic("txType cannot be 0, maybe env is not set correctly")
+	}
 
 	// Initialize database
 	log.Info("Initializing database...")

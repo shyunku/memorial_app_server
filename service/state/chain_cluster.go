@@ -53,6 +53,7 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 		}
 
 		transactions[*tx.Hash] = NewTransaction(
+			*tx.Version,
 			*tx.From,
 			*tx.Type,
 			*tx.Timestamp,

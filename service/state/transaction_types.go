@@ -1,5 +1,10 @@
 package state
 
+type TxInitializeBody struct {
+	Tasks      map[string]Task     `json:"tasks"`
+	Categories map[string]Category `json:"categories"`
+}
+
 type TxCreateTaskBody struct {
 	Id            string              `json:"tid"`
 	Title         string              `json:"title"`

@@ -81,15 +81,34 @@ func (b *UserSocketBundle) GetSize() int {
 /* -------------------------------- Custom -------------------------------- */
 
 type TxSocketRequest struct {
-	Type              int64       `json:"type"`
-	Timestamp         int64       `json:"timestamp"`
-	Content           interface{} `json:"content"`
-	TargetBlockNumber int64       `json:"targetBlockNumber"` // target block number as string (e.g. "1051240")
+	Version     int         `json:"version"`
+	Type        int64       `json:"type"`
+	Timestamp   int64       `json:"timestamp"`
+	Content     interface{} `json:"content"`
+	BlockNumber int64       `json:"blockNumber"` // target block number as string (e.g. "1051240")
+	Hash        string      `json:"hash"`
+}
+
+type TxHashByBlockNumberSocketRequest struct {
+	BlockNumber int64 `json:"blockNumber"`
 }
 
 type SyncBlocksSocketRequest struct {
-	StartBlockNumber int64 `json:"start_block_number"`
-	EndBlockNumber   int64 `json:"end_block_number"`
+	StartBlockNumber int64 `json:"startBlockNumber"`
+	EndBlockNumber   int64 `json:"endBlockNumber"`
 }
 
 type CommitTxBundleSocketRequest []TxSocketRequest
+
+type DeleteMismatchBlocksSocketRequest struct {
+	StartBlockNumber int64 `json:"startBlockNumber"`
+	EndBlockNumber   int64 `json:"endBlockNumber"`
+}
+
+type StateByBlockNumberSocketRequest struct {
+	BlockNumber int64 `json:"blockNumber"`
+}
+
+type BlockByBlockNumberSocketRequest struct {
+	BlockNumber int64 `json:"blockNumber"`
+}

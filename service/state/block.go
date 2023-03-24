@@ -33,7 +33,7 @@ func (b *Block) Hash() Hash {
 		bytes = append(bytes, b.State.Hash().Bytes()...)
 	}
 	if b.Tx != nil {
-		bytes = append(bytes, b.Tx.Hash().Bytes()...)
+		bytes = append(bytes, b.Tx.Hash.Bytes()...)
 	}
 	bytes = append(bytes, b.PrevBlockHash.Bytes()...)
 	hash := sha256.Sum256(bytes)

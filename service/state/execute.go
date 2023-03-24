@@ -32,11 +32,11 @@ const (
 	TxDeleteCategory
 )
 
-func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
+func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
 	state := prevState.Copy()
 	switch tx.Type {
 	case TxInitialize:
-		return InitialState(state, tx)
+		return InitializeState(state, tx, newBlockNumber)
 	case TxCreateTask:
 		return CreateTask(state, tx)
 	case TxDeleteTask:
@@ -76,8 +76,22 @@ func ExecuteTransaction(prevState *State, tx *Transaction) (*State, error) {
 	}
 }
 
-func InitialState(prevState *State, tx *Transaction) (*State, error) {
-	panic("not implemented")
+func InitializeState(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
+	if newBlockNumber != 1 {
+		return nil, fmt.Errorf("invalid block number for initialize state: %d, expected: 1", newBlockNumber)
+	}
+
+	var body TxInitializeBody
+	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
+		return nil, err
+	}
+
+	state := &State{
+		Tasks:      body.Tasks,
+		Categories: body.Categories,
+	}
+
+	return state, nil
 }
 
 func CreateTask(state *State, tx *Transaction) (*State, error) {

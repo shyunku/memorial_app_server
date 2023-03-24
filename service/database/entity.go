@@ -21,6 +21,7 @@ type BlockEntity struct {
 
 type TransactionEntity struct {
 	TxId      *int64  `db:"txid" json:"txId"`
+	Version   *int    `db:"version" json:"version"`
 	Type      *int64  `db:"type" json:"type"`
 	From      *string `db:"from" json:"from"`
 	Timestamp *int64  `db:"timestamp" json:"timestamp"`

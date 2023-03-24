@@ -15,11 +15,16 @@ type socketHandler func(socket *UserSocket, uid string, data interface{}) (inter
 
 var (
 	socketHandlers = map[string]socketHandler{
-		"test":               test,
-		"transaction":        handleTransaction,
-		"waitingBlockNumber": waitingBlockNumber,
-		"syncBlocks":         syncBlocks,
-		"commitTransactions": commitTransactions,
+		"test":                 test,
+		"transaction":          handleTransaction,
+		"waitingBlockNumber":   waitingBlockNumber,
+		"lastRemoteBlock":      lastRemoteBlock,
+		"syncBlocks":           syncBlocks,
+		"commitTransactions":   commitTransactions,
+		"txHashByBlockNumber":  txHashByBlockNumber,
+		"deleteMismatchBlocks": deleteMismatchBlocks,
+		"blockByBlockNumber":   blockByBlockNumber,
+		"stateByBlockNumber":   stateByBlockNumber,
 	}
 	socketBundles = map[string]*UserSocketBundle{}
 )
@@ -42,20 +47,31 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	userChain := state.Chains.GetChain(uid)
 
 	log.Debug(request)
+	// check version
+	if request.Version != state.SchemeVersion {
+		log.Errorf("Invalid version: waiting for %s, but %s given", state.SchemeVersion, request.Version)
+		return nil, fmt.Errorf("invalid version: waiting for %d", state.SchemeVersion)
+	}
 
 	// check if targetBlockNumber is valid
 	waitingBlockNumber := userChain.GetWaitingBlockNumber()
-	if request.TargetBlockNumber != waitingBlockNumber {
+	if request.BlockNumber != waitingBlockNumber {
 		// different block number
-		log.Errorf("Invalid target block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.TargetBlockNumber)
-		return nil, fmt.Errorf("invalid block number: waiting for block #%d", waitingBlockNumber)
+		log.Errorf("Invalid target block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.BlockNumber)
+		return nil, fmt.Errorf("invalid block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.BlockNumber)
 	}
 
 	// check if transaction is valid
-	tx := state.NewTransaction(uid, request.Type, request.Timestamp, request.Content)
+	tx := state.NewTransaction(request.Version, uid, request.Type, request.Timestamp, request.Content)
 	if err := tx.Validate(); err != nil {
 		log.Error("Invalid transaction")
 		return nil, fmt.Errorf("invalid request: %s", err.Error())
+	}
+
+	// check transaction hash
+	if request.Hash != tx.Hash.Hex() {
+		log.Errorf("Invalid transaction hash: expected for %s, but %s given", tx.Hash, request.Hash)
+		return nil, fmt.Errorf("invalid transaction hash: waiting for %s", tx.Hash)
 	}
 
 	// apply transaction
@@ -72,7 +88,14 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 			log.Warnf("Couldn't find socket bundle for user %s", uid)
 		}
 
+		updatedWaitingBlockNumber := userChain.GetWaitingBlockNumber()
+
 		for _, sock := range bundle.sockets {
+			// send updated waiting block number
+			if err := sock.Emitter("waiting_block_number", updatedWaitingBlockNumber); err != nil {
+				log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
+			}
+
 			// except sender
 			if sock.ConnectionId == socket.ConnectionId {
 				continue
@@ -86,6 +109,39 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	}()
 
 	return nil, nil
+}
+
+func lastRemoteBlock(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	userChain := state.Chains.GetChain(uid)
+	lastBlockNumber := userChain.GetLastBlockNumber()
+	lastBlock, err := userChain.GetBlockByNumber(lastBlockNumber)
+	if err != nil {
+		log.Errorf("Failed to get last block: %v", err)
+		return nil, fmt.Errorf("failed to get last block: %s", err.Error())
+	}
+	return lastBlock, nil
+}
+
+func txHashByBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	var request TxHashByBlockNumberSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+	block, err := userChain.GetBlockByNumber(request.BlockNumber)
+	if err != nil {
+		log.Errorf("Failed to get block: %v", err)
+		return nil, fmt.Errorf("failed to get block: %s", err.Error())
+	}
+	tx := block.Tx
+	if tx == nil {
+		log.Errorf("Failed to get transaction from block: %v", block)
+		return nil, fmt.Errorf("failed to get transaction from block: %v", block)
+	}
+
+	return tx.Hash.Hex(), nil
 }
 
 func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
@@ -137,6 +193,92 @@ func commitTransactions(socket *UserSocket, uid string, data interface{}) (inter
 	}
 
 	return nil, nil
+}
+
+func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	var request DeleteMismatchBlocksSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	// validate request
+	if request.StartBlockNumber > request.EndBlockNumber {
+		log.Error("Invalid block number range")
+		return nil, fmt.Errorf("invalid block number range: start block number is greater than end block number")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+	if err := userChain.DeleteBlockByInterval(request.StartBlockNumber, request.EndBlockNumber); err != nil {
+		log.Error("Error during deleting blocks: ", err)
+		return nil, fmt.Errorf("failed to delete blocks: %s", err.Error())
+	}
+
+	// broadcast transaction to same user connections
+	bundle, ok := socketBundles[uid]
+	if !ok {
+		log.Warnf("Couldn't find socket bundle for user %s", uid)
+	}
+
+	updatedWaitingBlockNumber := userChain.GetWaitingBlockNumber()
+
+	for _, sock := range bundle.sockets {
+		// send updated waiting block number
+		if err := sock.Emitter("waiting_block_number", updatedWaitingBlockNumber); err != nil {
+			log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
+		}
+
+		// except sender
+		if sock.ConnectionId == socket.ConnectionId {
+			continue
+		}
+
+		// send transaction
+		if err := sock.Emitter("delete_transaction_after", request.StartBlockNumber); err != nil {
+			log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
+		}
+	}
+
+	return nil, nil
+}
+
+func blockByBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	var request BlockByBlockNumberSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+	block, err := userChain.GetBlockByNumber(request.BlockNumber)
+	if err != nil {
+		log.Errorf("Failed to get block: %v", err)
+		return nil, fmt.Errorf("failed to get block: %s", err.Error())
+	}
+
+	return block, nil
+}
+
+func stateByBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	var request StateByBlockNumberSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+	block, err := userChain.GetBlockByNumber(request.BlockNumber)
+	if err != nil {
+		log.Errorf("Failed to get block: %v", err)
+		return nil, fmt.Errorf("failed to get block: %s", err.Error())
+	}
+	blockState := block.State
+	if blockState == nil {
+		log.Errorf("Failed to get state from block: %v", block)
+		return nil, fmt.Errorf("failed to get state from block: %v", block)
+	}
+
+	return blockState, nil
 }
 
 func SocketV1(c *gin.Context) {
@@ -269,6 +411,9 @@ func shorten(str string) string {
 }
 
 func printStat(connectionId string, uid string, text string) {
+	if len(text) > 100 {
+		text = text[:100] + "..."
+	}
 	log.Infof("Client[%s] User[%s]: %s", shorten(connectionId), uid, text)
 }
 
