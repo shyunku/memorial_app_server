@@ -6,6 +6,28 @@ import (
 	"strconv"
 )
 
+func StateHash(c *gin.Context) {
+// get block number from query
+	blockNumber := c.Query("block_number")
+
+	resp := make(map[string]string)
+	if blockNumber == "" {
+		// get all chains
+		cluster := state.Chains
+		for uid, chain := range *cluster {
+			resp[uid] = chain.GetLastState().Hash().Hex()
+		}
+	} else {
+		bn, _ := strconv.Atoi(blockNumber)
+		cluster := state.Chains
+		for uid, chain := range *cluster {
+			block, _ := chain.GetBlockByNumber(int64(bn))
+			resp[uid] = block.State.Hash().Hex()
+		}
+	}
+	c.JSON(200, resp)
+}
+
 func State(c *gin.Context) {
 	// get block number from query
 	blockNumber := c.Query("block_number")

@@ -34,6 +34,7 @@ const (
 
 func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
 	state := prevState.Copy()
+
 	switch tx.Type {
 	case TxInitialize:
 		return InitializeState(state, tx, newBlockNumber)

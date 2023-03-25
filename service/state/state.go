@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"memorial_app_server/log"
-	"reflect"
 )
 
 // State represents the current state of the application.
@@ -113,29 +112,20 @@ func (s *State) Validate() error {
 }
 
 func (s *State) Hash() Hash {
-	fieldBytes := make([]byte, 0)
-	values := reflect.ValueOf(*s)
-
-	for i := 0; i < values.NumField(); i++ {
-		value := values.Field(i)
-		raw := value.Interface()
-		bytes, _ := json.Marshal(raw)
-		fieldBytes = append(fieldBytes, bytes...)
-	}
-
-	hash := sha256.Sum256(fieldBytes)
+	bytes, _ := json.Marshal(s.Tasks)
+	hash := sha256.Sum256(bytes)
 	return hash
 }
 
 func (s *State) Copy() *State {
 	copiedTasks := make(map[string]Task)
 	for k, v := range s.Tasks {
-		copiedTasks[k] = v
+		copiedTasks[k] = *v.Copy()
 	}
 
 	copiedCategories := make(map[string]Category)
 	for k, v := range s.Categories {
-		copiedCategories[k] = v
+		copiedCategories[k] = *v.Copy()
 	}
 
 	return &State{

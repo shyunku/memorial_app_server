@@ -14,7 +14,6 @@ type Chain struct {
 	Blocks          map[int64]*Block `json:"blocks"`
 	LastBlockNumber int64            `json:"last_block_number"`
 	lock            *sync.Mutex
-	dbLock          *sync.Mutex
 }
 
 func newStateChain() *Chain {
@@ -23,7 +22,6 @@ func newStateChain() *Chain {
 		Blocks:          make(map[int64]*Block),
 		LastBlockNumber: 0,
 		lock:            &sync.Mutex{},
-		dbLock:          &sync.Mutex{},
 	}
 	newBlock := NewBlock(0, NewState(), nil, Hash{})
 	c.Blocks[0] = newBlock
@@ -237,8 +235,6 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
-		c.dbLock.Lock()
-		defer c.dbLock.Unlock()
 		ctx, err := database.DB.BeginTxx(context.Background(), nil)
 		if err != nil {
 			log.Error(err)
