@@ -87,9 +87,14 @@ type TxSocketRequest struct {
 	Content     interface{} `json:"content"`
 	BlockNumber int64       `json:"blockNumber"` // target block number as string (e.g. "1051240")
 	Hash        string      `json:"hash"`
+	BlockHash   string      `json:"blockHash"`
 }
 
 type TxHashByBlockNumberSocketRequest struct {
+	BlockNumber int64 `json:"blockNumber"`
+}
+
+type BlockHashByBlockNumberSocketRequest struct {
 	BlockNumber int64 `json:"blockNumber"`
 }
 

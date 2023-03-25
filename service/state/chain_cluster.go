@@ -105,12 +105,12 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			return err
 		}
 
-		var prevBlockHash Hash
+		var prevBlockHash string
 		if block.PrevBlockHash == nil {
 			log.Warnf("prev_block_hash is nil for block %s", *block.BlockHash)
-			prevBlockHash = Hash{}
+			prevBlockHash = ""
 		} else {
-			prevBlockHash, err = hexToHash(*block.PrevBlockHash)
+			prevBlockHash = *block.PrevBlockHash
 			if err != nil {
 				log.Errorf("failed to parse prev_block_hash of userId %s: %v", tx.From, err)
 				return err

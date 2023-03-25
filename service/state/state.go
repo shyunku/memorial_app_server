@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"memorial_app_server/log"
 )
 
 // State represents the current state of the application.
@@ -38,7 +37,6 @@ func (s *State) ToBytes() ([]byte, error) {
 }
 
 func (s *State) Validate() error {
-	log.Debug("Validating new state...")
 	// validate tasks links
 	type taskNode struct {
 		Id     string

@@ -15,16 +15,17 @@ type socketHandler func(socket *UserSocket, uid string, data interface{}) (inter
 
 var (
 	socketHandlers = map[string]socketHandler{
-		"test":                 test,
-		"transaction":          handleTransaction,
-		"waitingBlockNumber":   waitingBlockNumber,
-		"lastRemoteBlock":      lastRemoteBlock,
-		"syncBlocks":           syncBlocks,
-		"commitTransactions":   commitTransactions,
-		"txHashByBlockNumber":  txHashByBlockNumber,
-		"deleteMismatchBlocks": deleteMismatchBlocks,
-		"blockByBlockNumber":   blockByBlockNumber,
-		"stateByBlockNumber":   stateByBlockNumber,
+		"test":                   test,
+		"transaction":            handleTransaction,
+		"waitingBlockNumber":     waitingBlockNumber,
+		"lastRemoteBlock":        lastRemoteBlock,
+		"syncBlocks":             syncBlocks,
+		"commitTransactions":     commitTransactions,
+		"txHashByBlockNumber":    txHashByBlockNumber,
+		"blockHashByBlockNumber": blockHashByBlockNumber,
+		"deleteMismatchBlocks":   deleteMismatchBlocks,
+		"blockByBlockNumber":     blockByBlockNumber,
+		"stateByBlockNumber":     stateByBlockNumber,
 	}
 	socketBundles = map[string]*UserSocketBundle{}
 )
@@ -69,9 +70,22 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	}
 
 	// check transaction hash
-	if request.Hash != tx.Hash.Hex() {
+	if request.Hash != tx.Hash {
 		log.Errorf("Invalid transaction hash: expected for %s, but %s given", tx.Hash, request.Hash)
 		return nil, fmt.Errorf("invalid transaction hash: waiting for %s", tx.Hash)
+	}
+
+	// check block hash (expect)
+	prevBlock, err := userChain.GetBlockByNumber(request.BlockNumber - 1)
+	if err != nil {
+		log.Errorf("Failed to get previous block: %v", err)
+		return nil, fmt.Errorf("failed to get previous block: %s", err.Error())
+	}
+	prevBlockHash := prevBlock.Hash
+	expectedBlockHash := state.ExpectedBlockHash(request.BlockNumber, request.Hash, prevBlockHash).Hex()
+	if request.BlockHash != expectedBlockHash {
+		log.Errorf("Invalid block hash: expected for %s, but %s given", expectedBlockHash, request.BlockHash)
+		return nil, fmt.Errorf("invalid block hash: waiting for %s, given: %s", expectedBlockHash, request.BlockHash)
 	}
 
 	// apply transaction
@@ -141,7 +155,24 @@ func txHashByBlockNumber(socket *UserSocket, uid string, data interface{}) (inte
 		return nil, fmt.Errorf("failed to get transaction from block: %v", block)
 	}
 
-	return tx.Hash.Hex(), nil
+	return tx.Hash, nil
+}
+
+func blockHashByBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	var request BlockHashByBlockNumberSocketRequest
+	if err := util.InterfaceToStruct(data, &request); err != nil {
+		log.Errorf("Failed to unmarshal data: %v", data)
+		return nil, fmt.Errorf("invalid request: check format")
+	}
+
+	userChain := state.Chains.GetChain(uid)
+	block, err := userChain.GetBlockByNumber(request.BlockNumber)
+	if err != nil {
+		log.Errorf("Failed to get block: %v", err)
+		return nil, fmt.Errorf("failed to get block: %s", err.Error())
+	}
+
+	return block.Hash, nil
 }
 
 func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
@@ -223,19 +254,18 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 	updatedWaitingBlockNumber := userChain.GetWaitingBlockNumber()
 
 	for _, sock := range bundle.sockets {
+		// send transaction
+
+		if sock.ConnectionId != socket.ConnectionId {
+			// except sender
+			if err := sock.Emitter("delete_transaction_after", request.StartBlockNumber); err != nil {
+				log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
+			}
+		}
+
 		// send updated waiting block number
 		if err := sock.Emitter("waiting_block_number", updatedWaitingBlockNumber); err != nil {
 			log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
-		}
-
-		// except sender
-		if sock.ConnectionId == socket.ConnectionId {
-			continue
-		}
-
-		// send transaction
-		if err := sock.Emitter("delete_transaction_after", request.StartBlockNumber); err != nil {
-			log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
 		}
 	}
 

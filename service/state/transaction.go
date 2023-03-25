@@ -39,19 +39,19 @@ func hexToHash(str string) (Hash, error) {
 }
 
 type rawTransaction struct {
-	Version   int       `json:"version"`
+	Version   int         `json:"version"`
 	Type      int64       `json:"type"`
 	Timestamp int64       `json:"timestamp"`
 	Content   interface{} `json:"content"`
 }
 
 type Transaction struct {
-	Version   int       `json:"version"`
+	Version   int         `json:"version"`
 	From      string      `json:"from"`
 	Type      int64       `json:"type"`
 	Timestamp int64       `json:"timestamp"`
 	Content   interface{} `json:"content"`
-	Hash      Hash        `json:"hash"`
+	Hash      string      `json:"hash"`
 }
 
 func NewTransaction(version int, from string, txType int64, timestamp int64, content interface{}) *Transaction {
@@ -62,7 +62,7 @@ func NewTransaction(version int, from string, txType int64, timestamp int64, con
 		Timestamp: timestamp,
 		Content:   content,
 	}
-	tx.Hash = tx.CalcHash()
+	tx.Hash = tx.CalcHash().Hex()
 	return tx
 }
 
