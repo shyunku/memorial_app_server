@@ -38,8 +38,8 @@ func RunGin() {
 	r := SetupRouter()
 	if err := r.RunTLS(
 		fmt.Sprintf(":%d", configs.AppServerPort),
-		"certificates/server.crt",
-		"certificates/server.key"); err != nil {
+		"certificates/cert.pem",
+		"certificates/key.pem"); err != nil {
 		log.Fatal(err)
 		os.Exit(-3)
 	}
