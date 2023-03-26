@@ -1,2 +1,3 @@
 go build ./core/main.go
-./main
+sudo supervisorctl restart memorial
+tail -f output.log

@@ -24,7 +24,7 @@ func Login(c *gin.Context) {
 
 	// check if user registered in database
 	var userEntity database.UserEntity
-	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ?", body.AuthId).StructScan(&userEntity); err != nil {
+	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ? AND auth_encrypted_pw = ?", body.AuthId, body.EncryptedPassword).StructScan(&userEntity); err != nil {
 		if err == sql.ErrNoRows {
 			// user not found
 			c.AbortWithStatus(http.StatusUnauthorized)

@@ -11,7 +11,11 @@ import (
 	"strings"
 )
 
+const VERSION = "0.1.1"
+
 func main() {
+	log.Infof("Starting Memorial App Server v%s...", VERSION)
+
 	// Create Jwt secret key if needed
 	//crypto.PrintNewJwtSecret()
 

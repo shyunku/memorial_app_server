@@ -7,6 +7,7 @@ import (
 	"memorial_app_server/configs"
 	"memorial_app_server/controllers/v1"
 	"memorial_app_server/log"
+	"os"
 )
 
 func ping(c *gin.Context) {
@@ -35,7 +36,11 @@ func SetupRouter() *gin.Engine {
 func RunGin() {
 	log.Infof("Starting server on port on %d...", configs.AppServerPort)
 	r := SetupRouter()
-	if err := r.Run(fmt.Sprintf(":%d", configs.AppServerPort)); err != nil {
-		log.Error(err)
+	if err := r.RunTLS(
+		fmt.Sprintf(":%d", configs.AppServerPort),
+		"certificates/server.crt",
+		"certificates/server.key"); err != nil {
+		log.Fatal(err)
+		os.Exit(-3)
 	}
 }
