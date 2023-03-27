@@ -18,6 +18,7 @@ var (
 		"test":                   test,
 		"transaction":            handleTransaction,
 		"waitingBlockNumber":     waitingBlockNumber,
+		"lastBlockNumber":        lastBlockNumber,
 		"lastRemoteBlock":        lastRemoteBlock,
 		"syncBlocks":             syncBlocks,
 		"commitTransactions":     commitTransactions,
@@ -102,11 +103,11 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 			log.Warnf("Couldn't find socket bundle for user %s", uid)
 		}
 
-		updatedWaitingBlockNumber := userChain.GetWaitingBlockNumber()
+		updatedLastBlockNumber := userChain.GetLastBlockNumber()
 
 		for _, sock := range bundle.sockets {
 			// send updated waiting block number
-			if err := sock.Emitter("waiting_block_number", updatedWaitingBlockNumber); err != nil {
+			if err := sock.Emitter("last_block_number", updatedLastBlockNumber); err != nil {
 				log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
 			}
 
@@ -180,6 +181,11 @@ func waitingBlockNumber(socket *UserSocket, uid string, data interface{}) (inter
 	return userChain.GetWaitingBlockNumber(), nil
 }
 
+func lastBlockNumber(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	userChain := state.Chains.GetChain(uid)
+	return userChain.GetLastBlockNumber(), nil
+}
+
 func syncBlocks(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
 	var request SyncBlocksSocketRequest
 	if err := util.InterfaceToStruct(data, &request); err != nil {
@@ -251,7 +257,7 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 		log.Warnf("Couldn't find socket bundle for user %s", uid)
 	}
 
-	updatedWaitingBlockNumber := userChain.GetWaitingBlockNumber()
+	updatedLastBlockNumber := userChain.GetLastBlockNumber()
 
 	for _, sock := range bundle.sockets {
 		// send transaction
@@ -264,7 +270,7 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 		}
 
 		// send updated waiting block number
-		if err := sock.Emitter("waiting_block_number", updatedWaitingBlockNumber); err != nil {
+		if err := sock.Emitter("last_block_number", updatedLastBlockNumber); err != nil {
 			log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
 		}
 	}
