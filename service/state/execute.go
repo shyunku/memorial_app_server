@@ -300,6 +300,15 @@ func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
 	}
 
 	task.RepeatPeriod = body.RepeatPeriod
+	// update repeat period start time
+	repeatStartAt := task.RepeatStartAt
+	if repeatStartAt == 0 {
+		repeatStartAt = task.DueDate
+		if repeatStartAt != 0 {
+			task.RepeatStartAt = repeatStartAt
+		}
+	}
+
 	state.Tasks[body.TaskId] = task
 
 	return state, nil
