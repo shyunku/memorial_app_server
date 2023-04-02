@@ -1,10 +1,12 @@
 package state
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	json2 "encoding/json"
 	"errors"
+	"github.com/goccy/go-json"
+	"memorial_app_server/log"
 )
 
 var (
@@ -73,8 +75,16 @@ func (tx *Transaction) CalcHash() Hash {
 		Timestamp: tx.Timestamp,
 		Content:   tx.Content,
 	}
-	bytes, _ := json2.Marshal(rawTransaction)
-	hash := sha256.Sum256(bytes)
+	buffer := new(bytes.Buffer)
+	encoder := json.NewEncoder(buffer)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(rawTransaction)
+
+	jsonBytes := buffer.Bytes()
+	jsonBytes = bytes.TrimRight(jsonBytes, "\n")
+
+	log.Debugf("Transaction hash: %v", jsonBytes)
+	hash := sha256.Sum256(jsonBytes)
 	return hash
 }
 

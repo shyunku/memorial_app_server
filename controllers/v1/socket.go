@@ -49,6 +49,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	userChain := state.Chains.GetChain(uid)
 
 	log.Debug(request)
+
 	// check version
 	if request.Version != state.SchemeVersion {
 		log.Errorf("Invalid version: waiting for %s, but %s given", state.SchemeVersion, request.Version)
