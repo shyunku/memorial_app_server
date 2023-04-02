@@ -62,19 +62,21 @@ func (s *Subtask) Copy() *Subtask {
 }
 
 type Category struct {
-	Id     string `json:"cid"`
-	Title  string `json:"title"`
-	Secret bool   `json:"secret"`
-	Locked bool   `json:"locked"`
-	Color  string `json:"color"`
+	Id        string `json:"cid"`
+	Title     string `json:"title"`
+	Secret    bool   `json:"secret"`
+	Locked    bool   `json:"locked"`
+	Color     string `json:"color"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 func (c *Category) Copy() *Category {
 	return &Category{
-		Id:     c.Id,
-		Title:  c.Title,
-		Secret: c.Secret,
-		Locked: c.Locked,
-		Color:  c.Color,
+		Id:        c.Id,
+		Title:     c.Title,
+		Secret:    c.Secret,
+		Locked:    c.Locked,
+		Color:     c.Color,
+		CreatedAt: c.CreatedAt,
 	}
 }

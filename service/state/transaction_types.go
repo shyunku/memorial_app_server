@@ -103,11 +103,12 @@ type TxUpdateSubtaskDoneBody struct {
 }
 
 type TxCreateCategoryBody struct {
-	Id     string `json:"cid"`
-	Title  string `json:"title"`
-	Secret bool   `json:"secret"`
-	Locked bool   `json:"locked"`
-	Color  string `json:"color"`
+	Id        string `json:"cid"`
+	Title     string `json:"title"`
+	Secret    bool   `json:"secret"`
+	Locked    bool   `json:"locked"`
+	Color     string `json:"color"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 type TxDeleteCategoryBody struct {

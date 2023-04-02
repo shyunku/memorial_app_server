@@ -494,11 +494,12 @@ func CreateCategory(state *State, tx *Transaction) (*State, error) {
 	}
 
 	state.Categories[body.Id] = Category{
-		Id:     body.Id,
-		Title:  body.Title,
-		Secret: body.Secret,
-		Locked: body.Locked,
-		Color:  body.Color,
+		Id:        body.Id,
+		Title:     body.Title,
+		Secret:    body.Secret,
+		Locked:    body.Locked,
+		Color:     body.Color,
+		CreatedAt: body.CreatedAt,
 	}
 
 	return state, nil
