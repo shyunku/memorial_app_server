@@ -27,6 +27,7 @@ var (
 		"deleteMismatchBlocks":   deleteMismatchBlocks,
 		"blockByBlockNumber":     blockByBlockNumber,
 		"stateByBlockNumber":     stateByBlockNumber,
+		"clearStatePermanently":  clearStatePermanently,
 	}
 	socketBundles = map[string]*UserSocketBundle{}
 )
@@ -83,6 +84,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 		log.Errorf("Failed to get previous block: %v", err)
 		return nil, fmt.Errorf("failed to get previous block: %s", err.Error())
 	}
+	log.Debug(prevBlock)
 	prevBlockHash := prevBlock.Hash
 	expectedBlockHash := state.ExpectedBlockHash(request.BlockNumber, request.Hash, prevBlockHash).Hex()
 	if request.BlockHash != expectedBlockHash {
@@ -316,6 +318,15 @@ func stateByBlockNumber(socket *UserSocket, uid string, data interface{}) (inter
 	}
 
 	return blockState, nil
+}
+
+func clearStatePermanently(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
+	userChain := state.Chains.GetChain(uid)
+	if err := userChain.Clear(); err != nil {
+		log.Errorf("Failed to clear chain: %v", err)
+		return nil, fmt.Errorf("failed to clear chain: %s", err.Error())
+	}
+	return nil, nil
 }
 
 func SocketV1(c *gin.Context) {

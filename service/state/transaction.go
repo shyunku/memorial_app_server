@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/goccy/go-json"
-	"memorial_app_server/log"
 )
 
 var (
@@ -82,8 +81,7 @@ func (tx *Transaction) CalcHash() Hash {
 
 	jsonBytes := buffer.Bytes()
 	jsonBytes = bytes.TrimRight(jsonBytes, "\n")
-
-	log.Debugf("Transaction hash: %v", jsonBytes)
+	//log.Debugf("Transaction hash: %v", jsonBytes)
 	hash := sha256.Sum256(jsonBytes)
 	return hash
 }

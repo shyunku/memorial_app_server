@@ -5,25 +5,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jmoiron/sqlx"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 	"sync"
 )
 
 type Chain struct {
+	UserId          string           `json:"user_id"`
 	Blocks          map[int64]*Block `json:"blocks"`
 	LastBlockNumber int64            `json:"last_block_number"`
 	lock            *sync.Mutex
 }
 
-func newStateChain() *Chain {
+func newStateChain(userId string) *Chain {
 	// TODO :: add cleaner as go-routine for database
 	c := &Chain{
+		UserId:          userId,
 		Blocks:          make(map[int64]*Block),
 		LastBlockNumber: 0,
 		lock:            &sync.Mutex{},
 	}
-	newBlock := NewBlock(0, NewState(), nil, "")
+	newBlock := InitialBlock()
 	c.Blocks[0] = newBlock
 	log.Debugf("Initial block hash: %s", newBlock.Hash)
 	return c
@@ -65,13 +68,16 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 	if number < 0 {
 		return nil, fmt.Errorf("invalid block number: %d", number)
 	}
+	if number == 0 {
+		return c.Blocks[0], nil
+	}
 
 	// find block on cache
 	block, exist := c.Blocks[number]
 	if !exist {
 		// find block on database
 		var blockEntity database.BlockEntity
-		err := database.DB.Get(&blockEntity, "SELECT * FROM blocks WHERE block_number = ?", number)
+		err := database.DB.Get(&blockEntity, "SELECT * FROM blocks WHERE uid = ? AND block_number = ?", c.UserId, number)
 		if err != nil {
 			log.Error(err)
 			log.Debug("block number: ", number)
@@ -86,7 +92,7 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 		}
 
 		var txEntity database.TransactionEntity
-		err = database.DB.Get(&txEntity, "SELECT * FROM transactions WHERE hash = ?", blockEntity.TxHash)
+		err = database.DB.Get(&txEntity, "SELECT * FROM transactions WHERE `from` = ? AND hash = ?", c.UserId, blockEntity.TxHash)
 		if err != nil {
 			log.Error(err)
 			return nil, err
@@ -110,7 +116,7 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 	// TODO :: optimize this (maybe use cache)
 	var blockEntity database.BlockEntity
-	err := database.DB.Get(&blockEntity, "SELECT * FROM blocks WHERE block_hash = ?", hash)
+	err := database.DB.Get(&blockEntity, "SELECT * FROM blocks WHERE uid = ? AND block_hash = ?", c.UserId, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +128,7 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 	}
 
 	var txEntity database.TransactionEntity
-	err = database.DB.Get(&txEntity, "SELECT * FROM transactions WHERE hash = ?", blockEntity.TxHash)
+	err = database.DB.Get(&txEntity, "SELECT * FROM transactions WHERE `from` = ? AND hash = ?", c.UserId, blockEntity.TxHash)
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +160,26 @@ func (c *Chain) DeleteBlockByInterval(start, end int64) error {
 		delete(c.Blocks, i)
 	}
 
+	// collect txHashes from database
+	var txHashes []string
+	err := database.DB.Select(
+		&txHashes,
+		"SELECT tx_hash FROM blocks WHERE uid = ? AND block_number >= ? AND block_number <= ?", c.UserId, start, end)
+
 	// delete in database
-	_, err := database.DB.Exec("DELETE FROM blocks WHERE block_number >= ? AND block_number <= ?", start, end)
+	_, err = database.DB.Exec("DELETE FROM blocks WHERE uid = ? AND block_number >= ? AND block_number <= ?", c.UserId, start, end)
 	if err != nil {
 		return err
 	}
+
+	query, args, err := sqlx.In("DELETE FROM transactions WHERE hash IN (?)", txHashes)
+	if err != nil {
+		return err
+	}
+	query = sqlx.Rebind(sqlx.QUESTION, query)
+
+	// delete transactions
+	_, err = database.DB.Exec(query, args...)
 
 	// check if block exists after end in cache
 	remain := 0
@@ -174,6 +195,37 @@ func (c *Chain) DeleteBlockByInterval(start, end int64) error {
 	// update last block number
 	c.LastBlockNumber = start - 1
 
+	return nil
+}
+
+func (c *Chain) Clear() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// clear database
+	var txHashes []string
+	if err := database.DB.Select(&txHashes, "SELECT tx_hash FROM blocks WHERE uid = ?", c.UserId); err != nil {
+		return err
+	}
+	_, err := database.DB.Exec("DELETE FROM blocks WHERE uid = ?", c.UserId)
+	if err != nil {
+		return err
+	}
+
+	query, args, err := sqlx.In("DELETE FROM transactions WHERE hash IN (?)", txHashes)
+	if err != nil {
+		return err
+	}
+
+	query = sqlx.Rebind(sqlx.QUESTION, query)
+	_, err = database.DB.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+
+	c.Blocks = make(map[int64]*Block)
+	c.Blocks[0] = InitialBlock()
+	c.LastBlockNumber = 0
 	return nil
 }
 
@@ -259,7 +311,8 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 		}
 
 		_, err = ctx.Exec(
-			"INSERT INTO blocks (state, block_number, block_hash, tx_hash, prev_block_hash) VALUES (?, ?, ?, ?, ?)",
+			"INSERT INTO blocks (uid, state, block_number, block_hash, tx_hash, prev_block_hash) VALUES (?, ?, ?, ?, ?, ?)",
+			c.UserId,
 			marshaledState,
 			newBlock.Number,
 			newBlock.Hash,

@@ -26,7 +26,7 @@ func NewChainCluster() *ChainCluster {
 func (sm *ChainCluster) GetChain(userId string) *Chain {
 	chain, ok := (*sm)[userId]
 	if !ok {
-		chain = newStateChain()
+		chain = newStateChain(userId)
 		(*sm)[userId] = chain
 	}
 	return chain
