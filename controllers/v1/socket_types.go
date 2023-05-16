@@ -3,6 +3,8 @@ package v1
 import (
 	"encoding/json"
 	"github.com/gorilla/websocket"
+	"memorial_app_server/log"
+	"sync"
 )
 
 type SocketPacket struct {
@@ -32,12 +34,13 @@ func (p *SocketSendPacket) bytes() ([]byte, error) {
 	return json.Marshal(p)
 }
 
-type UserSocketEmitter func(topic string, data interface{}) error
+type UserSocketEmitter func(socket *UserSocket, topic string, data interface{}) error
 
 type UserSocket struct {
 	ConnectionId string
 	Conn         *websocket.Conn
 	Emitter      UserSocketEmitter
+	connMutex    sync.Mutex
 }
 
 func NewUserSocket(connectionId string, conn *websocket.Conn, emitter UserSocketEmitter) *UserSocket {
@@ -46,6 +49,13 @@ func NewUserSocket(connectionId string, conn *websocket.Conn, emitter UserSocket
 		Conn:         conn,
 		Emitter:      emitter,
 	}
+}
+
+func (s *UserSocket) Emit(topic string, data interface{}) error {
+	log.Debug("emit -> ", topic, data)
+	s.connMutex.Lock()
+	defer s.connMutex.Unlock()
+	return s.Emitter(s, topic, data)
 }
 
 type UserSocketBundle struct {

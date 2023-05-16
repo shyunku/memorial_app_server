@@ -110,7 +110,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 
 		for _, sock := range bundle.sockets {
 			// send updated waiting block number
-			if err := sock.Emitter("last_block_number", updatedLastBlockNumber); err != nil {
+			if err := sock.Emit("last_block_number", updatedLastBlockNumber); err != nil {
 				log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
 			}
 
@@ -120,7 +120,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 			}
 
 			// send transaction
-			if err := sock.Emitter("broadcast_transaction", newBlock); err != nil {
+			if err := sock.Emit("broadcast_transaction", newBlock); err != nil {
 				log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
 			}
 		}
@@ -267,13 +267,13 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 
 		if sock.ConnectionId != socket.ConnectionId {
 			// except sender
-			if err := sock.Emitter("delete_transaction_after", request.StartBlockNumber); err != nil {
+			if err := sock.Emit("delete_transaction_after", request.StartBlockNumber); err != nil {
 				log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
 			}
 		}
 
 		// send updated waiting block number
-		if err := sock.Emitter("last_block_number", updatedLastBlockNumber); err != nil {
+		if err := sock.Emit("last_block_number", updatedLastBlockNumber); err != nil {
 			log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
 		}
 	}
@@ -359,7 +359,7 @@ func SocketV1(c *gin.Context) {
 		socketBundles[uid] = socketBundle
 	}
 
-	socket := socketBundle.AddSocket(connectionId, conn, func(topic string, data interface{}) error {
+	socket := socketBundle.AddSocket(connectionId, conn, func(socket *UserSocket, topic string, data interface{}) error {
 		sendPacket := &SocketSendPacket{
 			Topic:      topic,
 			Data:       data,

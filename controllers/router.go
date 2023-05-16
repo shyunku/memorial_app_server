@@ -33,14 +33,22 @@ func SetupRouter() *gin.Engine {
 	return r
 }
 
-func RunGin() {
+func RunGin(debugMode bool) {
 	log.Infof("Starting server on port on %d...", configs.AppServerPort)
 	r := SetupRouter()
-	if err := r.RunTLS(
-		fmt.Sprintf(":%d", configs.AppServerPort),
-		"certificates/cert.pem",
-		"certificates/key.pem"); err != nil {
-		log.Fatal(err)
-		os.Exit(-3)
+
+	if debugMode {
+		if err := r.Run(fmt.Sprintf(":%d", configs.AppServerPort)); err != nil {
+			log.Fatal(err)
+			os.Exit(-3)
+		}
+	} else {
+		if err := r.RunTLS(
+			fmt.Sprintf(":%d", configs.AppServerPort),
+			"certificates/cert.pem",
+			"certificates/key.pem"); err != nil {
+			log.Fatal(err)
+			os.Exit(-3)
+		}
 	}
 }

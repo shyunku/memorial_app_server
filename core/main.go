@@ -13,6 +13,8 @@ import (
 
 const VERSION = "0.1.1"
 
+var DebugMode = false
+
 func main() {
 	log.Infof("Starting Memorial App Server v%s...", VERSION)
 
@@ -41,6 +43,7 @@ func main() {
 		"JWT_REFRESH_SECRET",
 		"JWT_REFRESH_EXPIRE",
 		"STATE_SCHEME_VERSION",
+		"DEBUG",
 	}
 	missingVariables := make([]string, 0)
 	for _, key := range envCheckKeys {
@@ -56,6 +59,13 @@ func main() {
 	}
 
 	// Setting extra environment variables
+	// debug
+	debug := os.Getenv("DEBUG")
+	if debug == "true" {
+		DebugMode = true
+		log.Info("debug mode activated")
+	}
+
 	// scheme version
 	rawSchemeVersion := os.Getenv("STATE_SCHEME_VERSION")
 	parsedSchemeVersion, err := strconv.Atoi(rawSchemeVersion)
@@ -88,5 +98,5 @@ func main() {
 	}
 
 	// Run web server with gin
-	controllers.RunGin()
+	controllers.RunGin(DebugMode)
 }
