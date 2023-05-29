@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"memorial_app_server/log"
 	"memorial_app_server/util"
+	"time"
 )
 
 const (
@@ -280,10 +281,37 @@ func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	task.Done = body.Done
-	task.DoneAt = body.DoneAt
-	state.Tasks[body.TaskId] = task
+	if task.RepeatPeriod != "" {
+		repeatStartAt := task.RepeatStartAt
+		if repeatStartAt == 0 {
+			repeatStartAt = task.DueDate
+		}
+		repeatPeriod := task.RepeatPeriod
+		// date milli (int64) -> time
+		nextDueDate := time.Unix(0, repeatStartAt*int64(time.Millisecond))
+		// compare with milliseconds
+		for nextDueDate.Before(time.Now()) || nextDueDate.UnixNano() / int64(time.Millisecond) <= task.DueDate {
+			switch repeatPeriod {
+			case "day":
+				nextDueDate = nextDueDate.AddDate(0, 0, 1)
+			case "week":
+				nextDueDate = nextDueDate.AddDate(0, 0, 7)
+			case "month":
+				nextDueDate = nextDueDate.AddDate(0, 1, 0)
+			case "year":
+				nextDueDate = nextDueDate.AddDate(1, 0, 0)
+			}
+		}
 
+		task.Done = false
+		task.DoneAt = body.DoneAt
+		task.DueDate = nextDueDate.UnixNano() / int64(time.Millisecond)
+	} else {
+		task.Done = body.Done
+		task.DoneAt = body.DoneAt
+	}
+
+	state.Tasks[body.TaskId] = task
 	return state, nil
 }
 

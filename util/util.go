@@ -15,6 +15,11 @@ var (
 	Big3 = big.NewInt(3)
 )
 
+// CurrentTimestampMilli returns current timestamp in milliseconds
+func CurrentTimestampMilli() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
 func InterfaceToStruct(src interface{}, dst interface{}) error {
 	jsonData, err := json.Marshal(src)
 	if err != nil {
