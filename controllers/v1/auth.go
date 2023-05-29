@@ -213,6 +213,7 @@ func saveRefreshToken(uid string, refreshToken authToken) error {
 	refreshTokenExpiresUnix := time.Unix(refreshToken.ExpiresAt, 0)
 	now := time.Now()
 
+	log.Debug("save refresh token", refreshToken.Token, uid, refreshTokenExpiresUnix.Sub(now))
 	if err := database.InMemoryDB.SetExp(refreshToken.Token, uid, refreshTokenExpiresUnix.Sub(now)); err != nil {
 		return err
 	}

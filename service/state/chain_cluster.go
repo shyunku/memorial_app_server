@@ -58,6 +58,7 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			*tx.Type,
 			*tx.Timestamp,
 			decodedContent,
+			*tx.Hash,
 		)
 	}
 

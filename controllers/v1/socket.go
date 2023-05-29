@@ -66,17 +66,17 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	}
 
 	// check if transaction is valid
-	tx := state.NewTransaction(request.Version, uid, request.Type, request.Timestamp, request.Content)
+	tx := state.NewTransaction(request.Version, uid, request.Type, request.Timestamp, request.Content, request.Hash)
 	if err := tx.Validate(); err != nil {
 		log.Error("Invalid transaction")
 		return nil, fmt.Errorf("invalid request: %s", err.Error())
 	}
 
-	// check transaction hash
-	if request.Hash != tx.Hash {
-		log.Errorf("Invalid transaction hash: expected for %s, but %s given", tx.Hash, request.Hash)
-		return nil, fmt.Errorf("invalid transaction hash: waiting for %s", tx.Hash)
-	}
+	// check transaction hash (doesn't check - v0.2.2)
+	//if request.Hash != tx.Hash {
+	//	log.Errorf("Invalid transaction hash: expected for %s, but %s given", tx.Hash, request.Hash)
+	//	return nil, fmt.Errorf("invalid transaction hash: waiting for %s", tx.Hash)
+	//}
 
 	// check block hash (expect)
 	prevBlock, err := userChain.GetBlockByNumber(request.BlockNumber - 1)
@@ -84,7 +84,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 		log.Errorf("Failed to get previous block: %v", err)
 		return nil, fmt.Errorf("failed to get previous block: %s", err.Error())
 	}
-	log.Debug(prevBlock)
+	//log.Debug(prevBlock)
 	prevBlockHash := prevBlock.Hash
 	expectedBlockHash := state.ExpectedBlockHash(request.BlockNumber, request.Hash, prevBlockHash).Hex()
 	if request.BlockHash != expectedBlockHash {
@@ -243,7 +243,7 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 	}
 
 	// validate request
-	if request.StartBlockNumber > request.EndBlockNumber {
+	if request.EndBlockNumber != -1 && request.StartBlockNumber > request.EndBlockNumber {
 		log.Error("Invalid block number range")
 		return nil, fmt.Errorf("invalid block number range: start block number is greater than end block number")
 	}

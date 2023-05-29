@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/joho/godotenv"
 	"memorial_app_server/controllers"
+	"memorial_app_server/libs/crypto"
 	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 	"memorial_app_server/service/state"
@@ -77,6 +78,9 @@ func main() {
 	if state.SchemeVersion == 0 {
 		panic("txType cannot be 0, maybe env is not set correctly")
 	}
+
+	// Initialize Jwt
+	crypto.Initialize()
 
 	// Initialize database
 	log.Info("Initializing database...")

@@ -55,15 +55,16 @@ type Transaction struct {
 	Hash      string      `json:"hash"`
 }
 
-func NewTransaction(version int, from string, txType int64, timestamp int64, content interface{}) *Transaction {
+func NewTransaction(version int, from string, txType int64, timestamp int64, content interface{}, hash string) *Transaction {
 	tx := &Transaction{
 		Version:   version,
 		From:      from,
 		Type:      txType,
 		Timestamp: timestamp,
 		Content:   content,
+		Hash:      hash,
 	}
-	tx.Hash = tx.CalcHash().Hex()
+	//tx.Hash = tx.CalcHash().Hex()
 	return tx
 }
 

@@ -105,7 +105,7 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 			return nil, err
 		}
 
-		tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
+		tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content, *txEntity.Hash)
 		block = NewBlock(number, state, tx, prevBlockHash)
 		c.InsertBlock(block)
 	}
@@ -138,7 +138,7 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 		return nil, err
 	}
 
-	tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content)
+	tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content, *txEntity.Hash)
 	block := NewBlock(*blockEntity.Number, state, tx, prevBlockHash)
 
 	return block, nil
@@ -153,6 +153,10 @@ func (c *Chain) DeleteBlockByInterval(start, end int64) error {
 		return fmt.Errorf("invalid start block number: %d", start)
 	} else if start == 0 {
 		return errors.New("initial state (block 0) is not allowed to delete")
+	}
+
+	if end == -1 {
+		end = c.GetLastBlockNumber()
 	}
 
 	// delete in cache

@@ -8,9 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 	"io"
+	"memorial_app_server/libs/crypto"
 	"memorial_app_server/service/database"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -32,11 +32,9 @@ func DefaultMiddleware(c *gin.Context) {
 func AuthMiddleware(c *gin.Context) {
 	rawToken, err := extractAuthToken(c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
-
-	jwtAccessSecretKey := os.Getenv("JWT_ACCESS_SECRET")
 
 	var unauthorizedErr error
 
@@ -45,7 +43,7 @@ func AuthMiddleware(c *gin.Context) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(jwtAccessSecretKey), nil
+		return []byte(crypto.JwtSecretKey), nil
 	})
 	if err != nil {
 		unauthorizedErr = err
@@ -64,26 +62,26 @@ func AuthMiddleware(c *gin.Context) {
 		url := "https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=" + rawToken
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": unauthorizedErr.Error()})
+			c.AbortWithError(http.StatusUnauthorized, unauthorizedErr)
 			return
 		}
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": unauthorizedErr.Error()})
+			c.AbortWithError(http.StatusUnauthorized, unauthorizedErr)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "google auth token expired or invalid"})
+			c.AbortWithError(http.StatusUnauthorized, errors.New("google auth token expired or invalid"))
 			return
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
 
@@ -91,7 +89,7 @@ func AuthMiddleware(c *gin.Context) {
 		var googleTokenInfo GoogleTokenInfo
 		err = json.Unmarshal(body, &googleTokenInfo)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
 
@@ -100,10 +98,10 @@ func AuthMiddleware(c *gin.Context) {
 		err = database.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleTokenInfo.UserId).StructScan(&userEntity)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "unknown user"})
+				c.AbortWithError(http.StatusUnauthorized, errors.New("unknown user"))
 				return
 			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				c.AbortWithError(http.StatusInternalServerError, err)
 				return
 			}
 		}
