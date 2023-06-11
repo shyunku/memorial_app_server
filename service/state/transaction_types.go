@@ -114,3 +114,8 @@ type TxCreateCategoryBody struct {
 type TxDeleteCategoryBody struct {
 	Id string `json:"cid"`
 }
+
+type TxUpdateCategoryColorBody struct {
+	Id    string `json:"cid"`
+	Color string `json:"color"`
+}

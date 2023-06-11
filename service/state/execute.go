@@ -31,6 +31,7 @@ const (
 
 	TxCreateCategory
 	TxDeleteCategory
+	TxUpdateCategoryColor
 )
 
 func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
@@ -73,6 +74,8 @@ func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64)
 		return CreateCategory(state, tx)
 	case TxDeleteCategory:
 		return DeleteCategory(state, tx)
+	case TxUpdateCategoryColor:
+		return UpdateCategoryColor(state, tx)
 	default:
 		return nil, ErrInvalidTxType
 	}
@@ -290,7 +293,7 @@ func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
 		// date milli (int64) -> time
 		nextDueDate := time.Unix(0, repeatStartAt*int64(time.Millisecond))
 		// compare with milliseconds
-		for nextDueDate.Before(time.Now()) || nextDueDate.UnixNano() / int64(time.Millisecond) <= task.DueDate {
+		for nextDueDate.Before(time.Now()) || nextDueDate.UnixNano()/int64(time.Millisecond) <= task.DueDate {
 			switch repeatPeriod {
 			case "day":
 				nextDueDate = nextDueDate.AddDate(0, 0, 1)
@@ -554,5 +557,23 @@ func DeleteCategory(state *State, tx *Transaction) (*State, error) {
 	}
 
 	delete(state.Categories, body.Id)
+	return state, nil
+}
+
+func UpdateCategoryColor(state *State, tx *Transaction) (*State, error) {
+	var body TxUpdateCategoryColorBody
+	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
+		return nil, err
+	}
+
+	category, ok := state.Categories[body.Id]
+	if !ok {
+		log.Warnf("updating category color category(%s) not found", body.Id)
+		return nil, ErrStateMismatch
+	}
+
+	category.Color = body.Color
+	state.Categories[body.Id] = category
+
 	return state, nil
 }
