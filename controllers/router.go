@@ -24,6 +24,7 @@ func SetupRouter() *gin.Engine {
 	// setting cors
 	config := cors.DefaultConfig()
 	config.AllowOrigins = []string{"*"}
+	config.AllowHeaders = append(config.AllowHeaders, "Authorization")
 
 	r := gin.Default()
 	r.Use(cors.New(config))

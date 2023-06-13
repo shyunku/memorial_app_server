@@ -29,7 +29,7 @@ var (
 		"stateByBlockNumber":     stateByBlockNumber,
 		"clearStatePermanently":  clearStatePermanently,
 	}
-	socketBundles = map[string]*UserSocketBundle{}
+	SocketBundles = map[string]*UserSocketBundle{}
 )
 
 func test(socket *UserSocket, uid string, data interface{}) (interface{}, error) {
@@ -101,7 +101,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 
 	go func() {
 		// broadcast transaction to same user connections
-		bundle, ok := socketBundles[uid]
+		bundle, ok := SocketBundles[uid]
 		if !ok {
 			log.Warnf("Couldn't find socket bundle for user %s", uid)
 		}
@@ -255,7 +255,7 @@ func deleteMismatchBlocks(socket *UserSocket, uid string, data interface{}) (int
 	}
 
 	// broadcast transaction to same user connections
-	bundle, ok := socketBundles[uid]
+	bundle, ok := SocketBundles[uid]
 	if !ok {
 		log.Warnf("Couldn't find socket bundle for user %s", uid)
 	}
@@ -353,10 +353,10 @@ func SocketV1(c *gin.Context) {
 
 	var socketBundle *UserSocketBundle
 	var bundleExists bool
-	if socketBundle, bundleExists = socketBundles[uid]; !bundleExists {
+	if socketBundle, bundleExists = SocketBundles[uid]; !bundleExists {
 		// socket bundle has to be created
 		socketBundle = NewUserSocketBundle(uid)
-		socketBundles[uid] = socketBundle
+		SocketBundles[uid] = socketBundle
 	}
 
 	socket := socketBundle.AddSocket(connectionId, conn, func(socket *UserSocket, topic string, data interface{}) error {
@@ -386,7 +386,7 @@ func SocketV1(c *gin.Context) {
 	defer func() {
 		socketBundle.RemoveSocket(connectionId)
 		if socketBundle.GetSize() == 0 {
-			delete(socketBundles, uid)
+			delete(SocketBundles, uid)
 		}
 		conn.Close()
 	}()

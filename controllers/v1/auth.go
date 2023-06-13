@@ -67,6 +67,71 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, authResult)
 }
 
+func AdminLogin(c *gin.Context) {
+	var body LoginRequestDto
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// check if user registered in database
+	var userEntity database.UserEntity
+	if err := database.DB.QueryRowx("SELECT * FROM user_master WHERE auth_id = ? AND auth_encrypted_pw = ?", body.AuthId, body.EncryptedPassword).StructScan(&userEntity); err != nil {
+		if err == sql.ErrNoRows {
+			// user not found
+			log.Debugf("user not found: %s, %s", body.AuthId, body.EncryptedPassword)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if userEntity.UserId == nil {
+		log.Error(errors.New("user_id is nil"))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	userId := *userEntity.UserId
+
+	var adminEntity database.AdminEntity
+	if err := database.DB.QueryRowx("SELECT * FROM admin_master WHERE uid = ?", userId).StructScan(&adminEntity); err != nil {
+		if err == sql.ErrNoRows {
+			// user not found
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// set auth token with jwt
+	authToken, err := createAuthToken(userId)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if err := saveRefreshToken(userId, authToken.RefreshToken); err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	userDto := UserDtoFromEntity(userEntity)
+	authDto := NewAuthTokenDto(authToken.AccessToken, authToken.RefreshToken)
+	authResult := &authResultDto{
+		User: userDto,
+		Auth: authDto,
+	}
+
+	c.JSON(http.StatusOK, authResult)
+}
+
 // Signup handle signup without Google auth
 func Signup(c *gin.Context) {
 	var body SignupRequestDto
@@ -230,6 +295,7 @@ func deleteRefreshToken(refreshToken string) error {
 func UseAuthRouter(g *gin.RouterGroup) {
 	sg := g.Group("/auth")
 	sg.POST("login", Login)
+	sg.POST("admin-login", AdminLogin)
 	sg.POST("signup", Signup)
 	sg.POST("refreshToken", RefreshToken)
 }

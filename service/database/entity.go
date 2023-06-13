@@ -1,5 +1,9 @@
 package database
 
+type AdminEntity struct {
+	UserId *string `db:"uid" json:"userId"`
+}
+
 type UserEntity struct {
 	UserId                *string `db:"uid" json:"userId"`
 	Username              *string `db:"username" json:"username"`

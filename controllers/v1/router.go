@@ -17,8 +17,10 @@ import (
 func UseRouterV1(r *gin.Engine) {
 	g := r.Group("/v1")
 	g.Use(DefaultMiddleware)
+
 	UseAuthRouter(g)
 	UseGoogleAuthRouter(g)
+	UseAdminRouter(g)
 	UseTokenRouter(g)
 	UseTestRouter(g) // comment this on production
 	UseSocketRouter(g)
