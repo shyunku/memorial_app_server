@@ -17,6 +17,13 @@ create table user_master
 alter table user_master
     add primary key (uid);
 
+create table admin_master
+(
+    uid varchar(255) null,
+    constraint admin_master_user_master_uid_fk
+        foreign key (uid) references user_master (uid)
+);
+
 create table transactions
 (
     txid int auto_increment
@@ -35,6 +42,7 @@ create table transactions
 
 create table blocks
 (
+    uid varchar(255) not null,
     block_hash varchar(255) not null,
     state longblob null,
     block_number bigint null,
