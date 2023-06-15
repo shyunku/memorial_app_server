@@ -3,14 +3,18 @@ package v1
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"io"
+	"io/ioutil"
+	"math/big"
 	json2 "memorial_app_server/libs/json"
 	"memorial_app_server/log"
 	database2 "memorial_app_server/service/database"
@@ -115,6 +119,134 @@ func SignupWithGoogleAuth(c *gin.Context) {
 	c.JSON(http.StatusOK, userEntity)
 }
 
+func SignupWithMobileGoogleAuth(c *gin.Context) {
+	var body SignupWithMobileGoogleAuthRequestDto
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pubKeys, err := fetchGoogleOauthPublicRsaKeys()
+
+	// validate access token as jwt
+	token, err := jwt.Parse(body.GoogleAccessToken, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		kid, ok := token.Header["kid"].(string)
+		if !ok {
+			return nil, fmt.Errorf("kid not found")
+		}
+
+		for _, key := range pubKeys {
+			var jwk struct {
+				Kid string `json:"kid"`
+				N   string `json:"n"`
+				E   string `json:"e"`
+			}
+			if err := json.Unmarshal(key, &jwk); err != nil {
+				continue
+			}
+			if jwk.Kid == kid {
+				nBytes, err := base64.RawURLEncoding.DecodeString(jwk.N)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode N value: %v", err)
+				}
+
+				eBytes, err := base64.RawURLEncoding.DecodeString(jwk.E)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode E value: %v", err)
+				}
+
+				n := new(big.Int).SetBytes(nBytes)
+				e := new(big.Int).SetBytes(eBytes)
+
+				publicKey := &rsa.PublicKey{
+					N: n,
+					E: int(e.Int64()),
+				}
+				return publicKey, nil
+			}
+		}
+		return nil, fmt.Errorf("public key not found for kid: %s", kid)
+	})
+	if err != nil {
+		log.Error(err)
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// check if token is valid
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		log.Error(err)
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	googleAuthId := claims["sub"].(string)
+	username := claims["name"].(string)
+	googleEmail := claims["email"].(string)
+	googleProfileImageUrl := claims["picture"].(string)
+
+	var userEntity database2.UserEntity
+	result := database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ?", googleAuthId)
+	err = result.StructScan(&userEntity)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// create user
+			// case: user that Google login as first
+			uid := uuid.New().String()
+			_, err = database2.DB.Exec(
+				"INSERT INTO user_master (uid, username, google_auth_id, google_email, google_profile_image_url) VALUES (?, ?, ?, ?, ?)",
+				uid, username, googleAuthId, googleEmail, googleProfileImageUrl,
+			)
+			if err != nil {
+				log.Error(err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+		} else {
+			log.Error(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// rescan user
+	result = database2.DB.QueryRowx("SELECT * FROM user_master WHERE google_auth_id = ? LIMIT 1", googleAuthId)
+	err = result.StructScan(&userEntity)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	userId := *userEntity.UserId
+	authToken, err := createAuthToken(userId)
+	if err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if err := saveRefreshToken(userId, authToken.RefreshToken); err != nil {
+		log.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	userDto := UserDtoFromEntity(userEntity)
+	authDto := NewAuthTokenDto(authToken.AccessToken, authToken.RefreshToken)
+	authResult := &authResultDto{
+		User: userDto,
+		Auth: authDto,
+	}
+
+	c.JSON(http.StatusOK, authResult)
+}
+
 func GoogleOauth2Login(c *gin.Context) {
 	// create random token to prevent CSRF
 	stateToken := createGoogleOauthState()
@@ -170,7 +302,24 @@ func GoogleOauth2Callback(c *gin.Context) {
 		return
 	}
 
-	// create user if not exist
+	if googleOauthUserInfo.Email == "" {
+		// try to parse
+		var googleUserInfoFetchError GoogleUserInfoFetchErrorDto
+		err = json.Unmarshal(contents, &googleUserInfoFetchError)
+		if err != nil {
+			var googleUserInfoFetchError2 GoogleUserInfoFetchErrorDto2
+			err = json.Unmarshal(contents, &googleUserInfoFetchError2)
+			if err != nil {
+				log.Error(err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, googleUserInfoFetchError2.ErrorDescription)
+		}
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to fetch google user info [%d]: %s",
+			googleUserInfoFetchError.Error.Code, googleUserInfoFetchError.Error.Message))
+	}
+
 	var googleAuthResult googleAuthResultDto
 
 	googleAuthResult.GoogleUserInfo = &googleOauthUserInfo
@@ -202,6 +351,29 @@ func GoogleOauth2Callback(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html", []byte(script))
 }
 
+func fetchGoogleOauthPublicRsaKeys() ([]json.RawMessage, error) {
+	resp, err := http.Get("https://www.googleapis.com/oauth2/v3/certs")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var jwkSet struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+	if err := json.Unmarshal(body, &jwkSet); err != nil {
+		fmt.Println("Failed to parse JWK set:", err)
+		return nil, err
+	}
+
+	return jwkSet.Keys, nil
+}
+
 func createGoogleOauthState() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -213,6 +385,7 @@ func createGoogleOauthState() string {
 func UseGoogleAuthRouter(g *gin.RouterGroup) {
 	sg := g.Group("/google_auth")
 	sg.POST("signup", SignupWithGoogleAuth)
+	sg.POST("signup_mobile", SignupWithMobileGoogleAuth)
 	sg.GET("login", GoogleOauth2Login)
 	sg.GET("login_callback", GoogleOauth2Callback)
 }

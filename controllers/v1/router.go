@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"io"
 	"memorial_app_server/libs/crypto"
+	"memorial_app_server/log"
 	"memorial_app_server/service/database"
 	"net/http"
 	"strings"
@@ -37,6 +38,8 @@ func AuthMiddleware(c *gin.Context) {
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
+
+	log.Debug("rawToken: ", rawToken)
 
 	var unauthorizedErr error
 
@@ -77,7 +80,7 @@ func AuthMiddleware(c *gin.Context) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			c.AbortWithError(http.StatusUnauthorized, errors.New("google auth token expired or invalid"))
+			c.AbortWithError(http.StatusUnauthorized, fmt.Errorf("auth error: %s, google auth error: %s", unauthorizedErr.Error(), resp.Status))
 			return
 		}
 
