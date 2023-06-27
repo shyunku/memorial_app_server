@@ -88,10 +88,6 @@ func (tx *Transaction) CalcHash() Hash {
 }
 
 func (tx *Transaction) Validate() error {
-	// type validation
-	if tx.Type < 1 || tx.Type > 30 {
-		return ErrInvalidTxType
-	}
 	// from validation
 	if tx.From == "" {
 		return ErrInvalidTxFrom

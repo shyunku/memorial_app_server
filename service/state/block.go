@@ -14,16 +14,16 @@ type rawBlock struct {
 type Block struct {
 	Number        int64 `json:"number"`
 	State         *State
-	Tx            *Transaction `json:"tx"`
+	Updates       *Updates `json:"updates"`
 	PrevBlockHash string
 	Hash          string `json:"hash"`
 }
 
-func NewBlock(number int64, state *State, tx *Transaction, prevBlockHash string) *Block {
+func NewBlock(number int64, state *State, updates *Updates, prevBlockHash string) *Block {
 	b := &Block{
 		Number:        number,
 		State:         state,
-		Tx:            tx,
+		Updates:       updates,
 		PrevBlockHash: prevBlockHash,
 	}
 	b.Hash = b.CalcHash().Hex()
@@ -36,8 +36,8 @@ func InitialBlock() *Block {
 
 func (b *Block) CalcHash() Hash {
 	txHash := ""
-	if b.Tx != nil {
-		txHash = b.Tx.Hash
+	if b.Updates != nil {
+		txHash = b.Updates.SrcTx.Hash
 	}
 	return ExpectedBlockHash(b.Number, txHash, b.PrevBlockHash)
 }

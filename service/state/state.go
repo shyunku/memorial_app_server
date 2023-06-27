@@ -131,3 +131,57 @@ func (s *State) Copy() *State {
 		Categories: copiedCategories,
 	}
 }
+
+func (s *State) SortTasks() (map[string]DirectionalTask, error) {
+	sorted := make(map[string]DirectionalTask, 0)
+	for _, task := range s.Tasks {
+		dt := &DirectionalTask{
+			Task: task,
+			Prev: "",
+		}
+		sorted[dt.Id] = *dt
+	}
+
+	for _, dt := range sorted {
+		if dt.Next != "" {
+			next, exists := sorted[dt.Next]
+			if !exists {
+				return nil, fmt.Errorf("task %s has non-existing next task %s", dt.Id, dt.Next)
+			}
+			next.Prev = dt.Id
+			sorted[next.Id] = next
+		}
+	}
+
+	// validate
+	vld := make(map[string]bool, 0)
+	var ptr string
+	for _, dt := range sorted {
+		if dt.Prev == "" {
+			ptr = dt.Id
+			break
+		}
+	}
+	if ptr == "" {
+		return nil, fmt.Errorf("no first task found")
+	}
+	for ptr != "" {
+		if _, exists := sorted[ptr]; !exists {
+			return nil, fmt.Errorf("task %s is not in sorted tasks", ptr)
+		}
+		// check next prev
+		if sorted[ptr].Next != "" {
+			if sorted[sorted[ptr].Next].Prev != ptr {
+				return nil, fmt.Errorf("task %s next prev is not %s", sorted[ptr].Next, ptr)
+			}
+		}
+		ptr = sorted[ptr].Next
+		vld[ptr] = true
+	}
+	// check length
+	if len(vld) != len(s.Tasks) {
+		return nil, fmt.Errorf("sorted tasks length is not equal to tasks length")
+	}
+
+	return sorted, nil
+}

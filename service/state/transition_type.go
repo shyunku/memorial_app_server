@@ -1,11 +1,6 @@
 package state
 
-type TxInitializeBody struct {
-	Tasks      map[string]Task     `json:"tasks"`
-	Categories map[string]Category `json:"categories"`
-}
-
-type TxCreateTaskBody struct {
+type CreateTaskParams struct {
 	Id            string          `json:"tid"`
 	Title         string          `json:"title"`
 	CreatedAt     int64           `json:"createdAt"`
@@ -16,57 +11,64 @@ type TxCreateTaskBody struct {
 	RepeatPeriod  string          `json:"repeatPeriod"`
 	RepeatStartAt int64           `json:"repeatStartAt"`
 	Categories    map[string]bool `json:"Categories"`
-	PrevTaskId    string          `json:"prevTaskId"`
 }
 
-type TxDeleteTaskBody struct {
+type DeleteTaskParams struct {
 	Id string `json:"tid"`
 }
 
-type TxUpdateTaskOrderBody struct {
-	Id           string `json:"tid"`
-	TargetTaskId string `json:"targetTaskId"` // 기준 task id
-	AfterTarget  bool   `json:"afterTarget"`  // 기준 task 다음에 추가할지 여부
+type UpdateTaskNextParams struct {
+	Id   string `json:"tid"`
+	Next string `json:"next"`
 }
 
-type TxUpdateTaskTitleBody struct {
+type UpdateTaskTitleParams struct {
 	Id    string `json:"tid"`
 	Title string `json:"title"`
 }
 
-type TxUpdateTaskDueDateBody struct {
+type UpdateTaskDueDateParams struct {
 	Id      string `json:"tid"`
 	DueDate int64  `json:"dueDate"`
 }
 
-type TxUpdateTaskMemoBody struct {
+type UpdateTaskMemoParams struct {
 	Id   string `json:"tid"`
 	Memo string `json:"memo"`
 }
 
-type TxUpdateTaskDoneBody struct {
-	TaskId string `json:"tid"`
-	Done   bool   `json:"done"`
+type UpdateTaskDoneParams struct {
+	Id   string `json:"tid"`
+	Done bool   `json:"done"`
+}
+
+type UpdateTaskDoneAtParams struct {
+	Id     string `json:"tid"`
 	DoneAt int64  `json:"doneAt"`
 }
 
-type TxUpdateTaskRepeatPeriodBody struct {
-	TaskId       string `json:"tid"`
+type UpdateTaskRepeatPeriodParams struct {
+	Id           string `json:"tid"`
 	RepeatPeriod string `json:"repeatPeriod"`
 }
 
-type TxAddTaskCategoryBody struct {
-	TaskId     string `json:"tid"`
+type UpdateTaskRepeatStartAtParams struct {
+	Id            string `json:"tid"`
+	RepeatStartAt int64  `json:"repeatStartAt"`
+}
+
+type CreateTaskCategoryParams struct {
+	Id         string `json:"tid"`
 	CategoryId string `json:"cid"`
 }
 
-type TxDeleteTaskCategoryBody struct {
-	TaskId     string `json:"tid"`
+type DeleteTaskCategoryParams struct {
+	Id         string `json:"tid"`
 	CategoryId string `json:"cid"`
 }
 
-type TxCreateSubtaskBody struct {
-	TaskId    string `json:"tid"`
+type CreateSubtaskParams struct {
+	Id        string `json:"tid"`
 	SubtaskId string `json:"sid"`
 	Title     string `json:"title"`
 	CreatedAt int64  `json:"createdAt"`
@@ -75,31 +77,36 @@ type TxCreateSubtaskBody struct {
 	DoneAt    int64  `json:"doneAt"`
 }
 
-type TxDeleteSubtaskBody struct {
-	TaskId    string `json:"tid"`
+type DeleteSubtaskParams struct {
+	Id        string `json:"tid"`
 	SubtaskId string `json:"sid"`
 }
 
-type TxUpdateSubtaskTitleBody struct {
-	TaskId    string `json:"tid"`
+type UpdateSubtaskTitleParams struct {
+	Id        string `json:"tid"`
 	SubtaskId string `json:"sid"`
 	Title     string `json:"title"`
 }
 
-type TxUpdateSubtaskDueDateBody struct {
-	TaskId    string `json:"tid"`
+type UpdateSubtaskDueDateParams struct {
+	Id        string `json:"tid"`
 	SubtaskId string `json:"sid"`
 	DueDate   int64  `json:"dueDate"`
 }
 
-type TxUpdateSubtaskDoneBody struct {
-	TaskId    string `json:"tid"`
+type UpdateSubtaskDoneParams struct {
+	Id        string `json:"tid"`
 	SubtaskId string `json:"sid"`
 	Done      bool   `json:"done"`
+}
+
+type UpdateSubtaskDoneAtParams struct {
+	Id        string `json:"tid"`
+	SubtaskId string `json:"sid"`
 	DoneAt    int64  `json:"doneAt"`
 }
 
-type TxCreateCategoryBody struct {
+type CreateCategoryParams struct {
 	Id        string `json:"cid"`
 	Title     string `json:"title"`
 	Secret    bool   `json:"secret"`
@@ -108,11 +115,11 @@ type TxCreateCategoryBody struct {
 	CreatedAt int64  `json:"createdAt"`
 }
 
-type TxDeleteCategoryBody struct {
+type DeleteCategoryParams struct {
 	Id string `json:"cid"`
 }
 
-type TxUpdateCategoryColorBody struct {
+type UpdateCategoryColorParams struct {
 	Id    string `json:"cid"`
 	Color string `json:"color"`
 }

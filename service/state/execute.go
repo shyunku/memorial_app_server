@@ -8,33 +8,32 @@ import (
 )
 
 const (
-	TxUnknown = iota
-	TxInitialize
+	TxInitialize = 0
 
-	TxCreateTask
-	TxDeleteTask
-	TxUpdateTaskOrder
-	TxUpdateTaskTitle
-	TxUpdateTaskDueDate
-	TxUpdateTaskMemo
-	TxUpdateTaskDone
-	TxUpdateTaskRepeatPeriod
+	TxCreateTask             = 10000
+	TxDeleteTask             = 10001
+	TxUpdateTaskOrder        = 10002
+	TxUpdateTaskTitle        = 10003
+	TxUpdateTaskDueDate      = 10004
+	TxUpdateTaskMemo         = 10005
+	TxUpdateTaskDone         = 10006
+	TxUpdateTaskRepeatPeriod = 10007
 
-	TxAddTaskCategory
-	TxDeleteTaskCategory
+	TxAddTaskCategory    = 10100
+	TxDeleteTaskCategory = 10101
 
-	TxCreateSubtask
-	TxDeleteSubtask
-	TxUpdateSubtaskTitle
-	TxUpdateSubtaskDueDate
-	TxUpdateSubtaskDone
+	TxCreateSubtask        = 11000
+	TxDeleteSubtask        = 11001
+	TxUpdateSubtaskTitle   = 11002
+	TxUpdateSubtaskDueDate = 11003
+	TxUpdateSubtaskDone    = 11004
 
-	TxCreateCategory
-	TxDeleteCategory
-	TxUpdateCategoryColor
+	TxCreateCategory      = 12000
+	TxDeleteCategory      = 12001
+	TxUpdateCategoryColor = 12002
 )
 
-func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
+func PreExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64) (*Updates, error) {
 	state := prevState.Copy()
 
 	switch tx.Type {
@@ -81,7 +80,8 @@ func ExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int64)
 	}
 }
 
-func InitializeState(prevState *State, tx *Transaction, newBlockNumber int64) (*State, error) {
+func InitializeState(prevState *State, tx *Transaction, newBlockNumber int64) (*Updates, error) {
+	updates := NewUpdates(tx)
 	if newBlockNumber != 1 {
 		return nil, fmt.Errorf("invalid block number for initialize state: %d, expected: 1", newBlockNumber)
 	}
@@ -91,21 +91,73 @@ func InitializeState(prevState *State, tx *Transaction, newBlockNumber int64) (*
 		return nil, err
 	}
 
-	state := &State{
-		Tasks:      body.Tasks,
-		Categories: body.Categories,
+	for _, category := range body.Categories {
+		updates.add(OpCreateCategory, &CreateCategoryParams{
+			Id:        category.Id,
+			Title:     category.Title,
+			Secret:    category.Secret,
+			Locked:    category.Locked,
+			Color:     category.Color,
+			CreatedAt: category.CreatedAt,
+		})
 	}
 
-	return state, nil
+	for _, task := range body.Tasks {
+		categories := make(map[string]bool)
+		for categoryId := range task.Categories {
+			categories[categoryId] = true
+		}
+
+		updates.add(OpCreateTask, &CreateTaskParams{
+			Id:            task.Id,
+			Title:         task.Title,
+			CreatedAt:     task.CreatedAt,
+			DoneAt:        task.DoneAt,
+			Memo:          task.Memo,
+			Done:          task.Done,
+			DueDate:       task.DueDate,
+			RepeatPeriod:  task.RepeatPeriod,
+			RepeatStartAt: task.RepeatStartAt,
+			Categories:    categories,
+		})
+
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   task.Id,
+			Next: task.Next,
+		})
+
+		for _, subtask := range task.Subtasks {
+			updates.add(OpCreateSubtask, &CreateSubtaskParams{
+				Id:        task.Id,
+				SubtaskId: subtask.Id,
+				Title:     subtask.Title,
+				CreatedAt: subtask.CreatedAt,
+				DueDate:   subtask.DueDate,
+				Done:      subtask.Done,
+				DoneAt:    subtask.DoneAt,
+			})
+		}
+	}
+
+	return updates, nil
 }
 
-func CreateTask(state *State, tx *Transaction) (*State, error) {
+func CreateTask(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxCreateTaskBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	state.Tasks[body.Id] = Task{
+	categories := make(map[string]bool)
+	for categoryId := range body.Categories {
+		if _, ok := state.Categories[categoryId]; !ok {
+			return nil, fmt.Errorf("category not found: %s", categoryId)
+		}
+		categories[categoryId] = true
+	}
+
+	updates.add(OpCreateTask, &CreateTaskParams{
 		Id:            body.Id,
 		Title:         body.Title,
 		CreatedAt:     body.CreatedAt,
@@ -115,44 +167,65 @@ func CreateTask(state *State, tx *Transaction) (*State, error) {
 		DueDate:       body.DueDate,
 		RepeatPeriod:  body.RepeatPeriod,
 		RepeatStartAt: body.RepeatStartAt,
-		Subtasks:      map[string]Subtask{},
-		Categories:    map[string]bool{},
-	}
+		Categories:    categories,
+	})
 
 	// update next of previous
 	if body.PrevTaskId != "" {
 		prevTask := state.Tasks[body.PrevTaskId]
-		prevTask.Next = body.Id
-		state.Tasks[body.PrevTaskId] = prevTask
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   prevTask.Id,
+			Next: body.Id,
+		})
 	}
 
-	return state, nil
+	return updates, nil
 }
 
-func DeleteTask(state *State, tx *Transaction) (*State, error) {
+func DeleteTask(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxDeleteTaskBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
+	sortedTasks, err := state.SortTasks()
+	if err != nil {
+		return nil, err
+	}
+
+	dt, ok := sortedTasks[body.Id]
+	if !ok {
+		return nil, ErrTaskNotFound
+	}
+
 	// update next of previous
-	if body.PrevTaskId != "" {
-		prevTask := state.Tasks[body.PrevTaskId]
+	if dt.Prev != "" {
+		prevTask, ok := state.Tasks[dt.Prev]
+		if !ok {
+			return nil, fmt.Errorf("prev task not found: %s", dt.Prev)
+		}
 
 		if prevTask.Next != body.Id {
 			log.Warnf("prevTask.Next(%s) != body.Id(%s)", prevTask.Next, body.Id)
 			return nil, ErrStateMismatch
 		}
 
-		prevTask.Next = state.Tasks[body.Id].Next
-		state.Tasks[body.PrevTaskId] = prevTask
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   prevTask.Id,
+			Next: state.Tasks[body.Id].Next,
+		})
 	}
 
-	delete(state.Tasks, body.Id)
-	return state, nil
+	updates.add(OpDeleteTask, &DeleteTaskParams{
+		Id: body.Id,
+	})
+
+	return updates, nil
 }
 
-func UpdateTaskOrder(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskOrder(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskOrderBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -164,12 +237,25 @@ func UpdateTaskOrder(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
+	sortedTasks, err := state.SortTasks()
+	if err != nil {
+		return nil, err
+	}
+
+	dt, ok := sortedTasks[body.Id]
+	if !ok {
+		return nil, ErrTaskNotFound
+	}
+
 	// get next Task
 	nextTaskId := currentTask.Next
 
 	// update previous task's next
-	if body.PrevTaskId != "" {
-		prevTask := state.Tasks[body.PrevTaskId]
+	if dt.Prev != "" {
+		prevTask, ok := state.Tasks[dt.Prev]
+		if !ok {
+			return nil, fmt.Errorf("prev task not found: %s", dt.Prev)
+		}
 
 		if prevTask.Next != body.Id {
 			log.Warnf("prevTask.Next(%s) != body.Id(%s)", prevTask.Next, body.Id)
@@ -177,7 +263,11 @@ func UpdateTaskOrder(state *State, tx *Transaction) (*State, error) {
 		}
 
 		prevTask.Next = nextTaskId
-		state.Tasks[body.PrevTaskId] = prevTask
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   prevTask.Id,
+			Next: nextTaskId,
+		})
+		state.Tasks[dt.Prev] = prevTask
 	}
 
 	targetTask, targetTaskExists := state.Tasks[body.TargetTaskId]
@@ -188,19 +278,32 @@ func UpdateTaskOrder(state *State, tx *Transaction) (*State, error) {
 		if targetTaskExists {
 			targetTaskNextId = targetTask.Next
 			targetTask.Next = body.Id
+			updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+				Id:   targetTask.Id,
+				Next: body.Id,
+			})
 			state.Tasks[targetTask.Id] = targetTask
 		} else {
 			targetTaskNextId = ""
 		}
 		// update task's next
 		currentTask.Next = targetTaskNextId
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   currentTask.Id,
+			Next: targetTaskNextId,
+		})
 		state.Tasks[currentTask.Id] = currentTask
 	} else {
+		targetDt, ok := sortedTasks[targetTask.Id]
+		if !ok {
+			return nil, ErrTaskNotFound
+		}
+
 		// update target prev task's next
-		if body.TargetPrevTaskId != "" {
-			targetPrevTask, ok := state.Tasks[body.TargetPrevTaskId]
+		if targetDt.Prev != "" {
+			targetPrevTask, ok := state.Tasks[targetDt.Prev]
 			if !ok {
-				log.Warnf("updating order targetPrevTask(%s) not found", body.TargetPrevTaskId)
+				log.Warnf("updating order targetPrevTask(%s) not found", targetDt.Prev)
 				return nil, ErrStateMismatch
 			}
 			if targetPrevTask.Next != body.TargetTaskId {
@@ -208,71 +311,86 @@ func UpdateTaskOrder(state *State, tx *Transaction) (*State, error) {
 				return nil, ErrStateMismatch
 			}
 			targetPrevTask.Next = body.Id
+			updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+				Id:   targetPrevTask.Id,
+				Next: body.Id,
+			})
 			state.Tasks[targetPrevTask.Id] = targetPrevTask
 		}
 		// update task's next
 		currentTask.Next = body.TargetTaskId
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   currentTask.Id,
+			Next: body.TargetTaskId,
+		})
 		state.Tasks[currentTask.Id] = currentTask
 	}
 
-	return state, nil
+	return updates, nil
 }
 
-func UpdateTaskTitle(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskTitle(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskTitleBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	task, ok := state.Tasks[body.Id]
+	_, ok := state.Tasks[body.Id]
 	if !ok {
 		log.Warnf("updating title task(%s) not found", body.Id)
 		return nil, ErrStateMismatch
 	}
 
-	task.Title = body.Title
-	state.Tasks[body.Id] = task
-
-	return state, nil
+	updates.add(OpUpdateTaskTitle, &UpdateTaskTitleParams{
+		Id:    body.Id,
+		Title: body.Title,
+	})
+	return updates, nil
 }
 
-func UpdateTaskDueDate(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskDueDate(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskDueDateBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	task, ok := state.Tasks[body.Id]
+	_, ok := state.Tasks[body.Id]
 	if !ok {
 		log.Warnf("updating dueDate task(%s) not found", body.Id)
 		return nil, ErrStateMismatch
 	}
 
-	task.DueDate = body.DueDate
-	state.Tasks[body.Id] = task
-
-	return state, nil
+	updates.add(OpUpdateTaskDueDate, &UpdateTaskDueDateParams{
+		Id:      body.Id,
+		DueDate: body.DueDate,
+	})
+	return updates, nil
 }
 
-func UpdateTaskMemo(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskMemo(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskMemoBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	task, ok := state.Tasks[body.Id]
+	_, ok := state.Tasks[body.Id]
 	if !ok {
 		log.Warnf("updating memo task(%s) not found", body.Id)
 		return nil, ErrStateMismatch
 	}
 
-	task.Memo = body.Memo
-	state.Tasks[body.Id] = task
-
-	return state, nil
+	updates.add(OpUpdateTaskMemo, &UpdateTaskMemoParams{
+		Id:   body.Id,
+		Memo: body.Memo,
+	})
+	return updates, nil
 }
 
-func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskDone(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskDoneBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -306,19 +424,34 @@ func UpdateTaskDone(state *State, tx *Transaction) (*State, error) {
 			}
 		}
 
-		task.Done = false
-		task.DoneAt = body.DoneAt
-		task.DueDate = nextDueDate.UnixNano() / int64(time.Millisecond)
+		updates.add(OpUpdateTaskDone, &UpdateTaskDoneParams{
+			Id:   body.TaskId,
+			Done: body.Done,
+		})
+		updates.add(OpUpdateTaskDoneAt, &UpdateTaskDoneAtParams{
+			Id:     body.TaskId,
+			DoneAt: body.DoneAt,
+		})
+		updates.add(OpUpdateTaskDueDate, &UpdateTaskDueDateParams{
+			Id:      body.TaskId,
+			DueDate: nextDueDate.UnixNano() / int64(time.Millisecond),
+		})
 	} else {
-		task.Done = body.Done
-		task.DoneAt = body.DoneAt
+		updates.add(OpUpdateTaskDone, &UpdateTaskDoneParams{
+			Id:   body.TaskId,
+			Done: body.Done,
+		})
+		updates.add(OpUpdateTaskDoneAt, &UpdateTaskDoneAtParams{
+			Id:     body.TaskId,
+			DoneAt: body.DoneAt,
+		})
 	}
 
-	state.Tasks[body.TaskId] = task
-	return state, nil
+	return updates, nil
 }
 
-func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
+func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateTaskRepeatPeriodBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -330,6 +463,10 @@ func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
+	updates.add(OpUpdateTaskRepeatPeriod, &UpdateTaskRepeatPeriodParams{
+		Id:           body.TaskId,
+		RepeatPeriod: body.RepeatPeriod,
+	})
 	task.RepeatPeriod = body.RepeatPeriod
 	// update repeat period start time
 	repeatStartAt := task.RepeatStartAt
@@ -337,21 +474,24 @@ func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*State, error) {
 		repeatStartAt = task.DueDate
 		if repeatStartAt != 0 {
 			task.RepeatStartAt = repeatStartAt
+			updates.add(OpUpdateTaskRepeatStartAt, &UpdateTaskRepeatStartAtParams{
+				Id:            body.TaskId,
+				RepeatStartAt: repeatStartAt,
+			})
 		}
 	}
 
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	return updates, nil
 }
 
-func AddTaskCategory(state *State, tx *Transaction) (*State, error) {
+func AddTaskCategory(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxAddTaskCategoryBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	task, ok := state.Tasks[body.TaskId]
+	_, ok := state.Tasks[body.TaskId]
 	if !ok {
 		log.Warnf("adding category task(%s) not found", body.TaskId)
 		return nil, ErrStateMismatch
@@ -363,13 +503,15 @@ func AddTaskCategory(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	task.Categories[body.CategoryId] = true
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpCreateTaskCategory, &CreateTaskCategoryParams{
+		Id:         body.TaskId,
+		CategoryId: body.CategoryId,
+	})
+	return updates, nil
 }
 
-func DeleteTaskCategory(state *State, tx *Transaction) (*State, error) {
+func DeleteTaskCategory(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxDeleteTaskCategoryBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -387,38 +529,40 @@ func DeleteTaskCategory(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	delete(task.Categories, body.CategoryId)
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpDeleteTaskCategory, &DeleteTaskCategoryParams{
+		Id:         body.TaskId,
+		CategoryId: body.CategoryId,
+	})
+	return updates, nil
 }
 
-func CreateSubtask(state *State, tx *Transaction) (*State, error) {
+func CreateSubtask(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxCreateSubtaskBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	task, ok := state.Tasks[body.TaskId]
+	_, ok := state.Tasks[body.TaskId]
 	if !ok {
 		log.Warnf("adding subtask task(%s) not found", body.TaskId)
 		return nil, ErrStateMismatch
 	}
 
-	task.Subtasks[body.SubtaskId] = Subtask{
-		Id:        body.SubtaskId,
+	updates.add(OpCreateSubtask, &CreateSubtaskParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
 		Title:     body.Title,
 		CreatedAt: body.CreatedAt,
-		DoneAt:    body.DoneAt,
-		Done:      body.Done,
 		DueDate:   body.DueDate,
-	}
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+		Done:      body.Done,
+		DoneAt:    body.DoneAt,
+	})
+	return updates, nil
 }
 
-func DeleteSubtask(state *State, tx *Transaction) (*State, error) {
+func DeleteSubtask(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxDeleteSubtaskBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -436,13 +580,15 @@ func DeleteSubtask(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	delete(task.Subtasks, body.SubtaskId)
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpDeleteSubtask, &DeleteSubtaskParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
+	})
+	return updates, nil
 }
 
-func UpdateSubtaskTitle(state *State, tx *Transaction) (*State, error) {
+func UpdateSubtaskTitle(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateSubtaskTitleBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -454,20 +600,22 @@ func UpdateSubtaskTitle(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	subtask, ok := task.Subtasks[body.SubtaskId]
+	_, ok = task.Subtasks[body.SubtaskId]
 	if !ok {
 		log.Warnf("updating subtask title subtask(%s) not found", body.SubtaskId)
 		return nil, ErrStateMismatch
 	}
 
-	subtask.Title = body.Title
-	task.Subtasks[body.SubtaskId] = subtask
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpUpdateSubtaskTitle, &UpdateSubtaskTitleParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
+		Title:     body.Title,
+	})
+	return updates, nil
 }
 
-func UpdateSubtaskDueDate(state *State, tx *Transaction) (*State, error) {
+func UpdateSubtaskDueDate(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateSubtaskDueDateBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -479,20 +627,22 @@ func UpdateSubtaskDueDate(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	subtask, ok := task.Subtasks[body.SubtaskId]
+	_, ok = task.Subtasks[body.SubtaskId]
 	if !ok {
 		log.Warnf("updating subtask dueDate subtask(%s) not found", body.SubtaskId)
 		return nil, ErrStateMismatch
 	}
 
-	subtask.DueDate = body.DueDate
-	task.Subtasks[body.SubtaskId] = subtask
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpUpdateSubtaskDueDate, &UpdateSubtaskDueDateParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
+		DueDate:   body.DueDate,
+	})
+	return updates, nil
 }
 
-func UpdateSubtaskDone(state *State, tx *Transaction) (*State, error) {
+func UpdateSubtaskDone(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateSubtaskDoneBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -504,39 +654,45 @@ func UpdateSubtaskDone(state *State, tx *Transaction) (*State, error) {
 		return nil, ErrStateMismatch
 	}
 
-	subtask, ok := task.Subtasks[body.SubtaskId]
+	_, ok = task.Subtasks[body.SubtaskId]
 	if !ok {
 		log.Warnf("updating subtask done subtask(%s) not found", body.SubtaskId)
 		return nil, ErrStateMismatch
 	}
 
-	subtask.Done = body.Done
-	subtask.DoneAt = body.DoneAt
-	task.Subtasks[body.SubtaskId] = subtask
-	state.Tasks[body.TaskId] = task
-
-	return state, nil
+	updates.add(OpUpdateSubtaskDone, &UpdateSubtaskDoneParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
+		Done:      body.Done,
+	})
+	updates.add(OpUpdateSubtaskDoneAt, &UpdateSubtaskDoneAtParams{
+		Id:        body.TaskId,
+		SubtaskId: body.SubtaskId,
+		DoneAt:    body.DoneAt,
+	})
+	return updates, nil
 }
 
-func CreateCategory(state *State, tx *Transaction) (*State, error) {
+func CreateCategory(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxCreateCategoryBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	state.Categories[body.Id] = Category{
+	updates.add(OpCreateCategory, &CreateCategoryParams{
 		Id:        body.Id,
 		Title:     body.Title,
 		Secret:    body.Secret,
 		Locked:    body.Locked,
 		Color:     body.Color,
 		CreatedAt: body.CreatedAt,
-	}
-
-	return state, nil
+	})
+	return updates, nil
 }
 
-func DeleteCategory(state *State, tx *Transaction) (*State, error) {
+func DeleteCategory(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxDeleteCategoryBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
@@ -556,24 +712,28 @@ func DeleteCategory(state *State, tx *Transaction) (*State, error) {
 		return nil, fmt.Errorf("category is already used by %d tasks", alreadyUsing)
 	}
 
-	delete(state.Categories, body.Id)
-	return state, nil
+	updates.add(OpDeleteCategory, &DeleteCategoryParams{
+		Id: body.Id,
+	})
+	return updates, nil
 }
 
-func UpdateCategoryColor(state *State, tx *Transaction) (*State, error) {
+func UpdateCategoryColor(state *State, tx *Transaction) (*Updates, error) {
+	updates := NewUpdates(tx)
 	var body TxUpdateCategoryColorBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
 
-	category, ok := state.Categories[body.Id]
+	_, ok := state.Categories[body.Id]
 	if !ok {
 		log.Warnf("updating category color category(%s) not found", body.Id)
 		return nil, ErrStateMismatch
 	}
 
-	category.Color = body.Color
-	state.Categories[body.Id] = category
-
-	return state, nil
+	updates.add(OpUpdateCategoryColor, &UpdateCategoryColorParams{
+		Id:    body.Id,
+		Color: body.Color,
+	})
+	return updates, nil
 }

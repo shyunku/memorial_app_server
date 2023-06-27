@@ -41,6 +41,11 @@ func (t *Task) Copy() *Task {
 	return task
 }
 
+type DirectionalTask struct {
+	Task
+	Prev string `json:"prev"`
+}
+
 type Subtask struct {
 	Id        string `json:"sid"`
 	Title     string `json:"title"`

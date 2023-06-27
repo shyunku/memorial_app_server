@@ -7,7 +7,7 @@ import (
 )
 
 func StateHash(c *gin.Context) {
-// get block number from query
+	// get block number from query
 	blockNumber := c.Query("block_number")
 
 	resp := make(map[string]string)
@@ -62,7 +62,7 @@ func Transaction(c *gin.Context) {
 		for uid, chain := range *cluster {
 			lastBn := chain.GetLastBlockNumber()
 			block, _ := chain.GetBlockByNumber(lastBn)
-			tx := block.Tx
+			tx := block.Updates.SrcTx
 			resp[uid] = *tx
 		}
 	} else {
@@ -70,7 +70,7 @@ func Transaction(c *gin.Context) {
 		cluster := state.Chains
 		for uid, chain := range *cluster {
 			block, _ := chain.GetBlockByNumber(int64(bn))
-			tx := block.Tx
+			tx := block.Updates.SrcTx
 			resp[uid] = *tx
 		}
 	}

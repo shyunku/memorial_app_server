@@ -85,8 +85,13 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 		}
 
 		state := NewState()
-		err = state.FromBytes(blockEntity.State)
-		if err != nil {
+		if err = state.FromBytes(blockEntity.State); err != nil {
+			log.Error(err)
+			return nil, err
+		}
+
+		transitions := NewTransitions()
+		if err = transitions.FromBytes(blockEntity.Transitions); err != nil {
 			log.Error(err)
 			return nil, err
 		}
@@ -106,7 +111,8 @@ func (c *Chain) GetBlockByNumber(number int64) (*Block, error) {
 		}
 
 		tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content, *txEntity.Hash)
-		block = NewBlock(number, state, tx, prevBlockHash)
+		updates := NewUpdatesWithTransitions(tx, transitions)
+		block = NewBlock(number, state, updates, prevBlockHash)
 		c.InsertBlock(block)
 	}
 
@@ -122,8 +128,12 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 	}
 
 	state := NewState()
-	err = state.FromBytes(blockEntity.State)
-	if err != nil {
+	if err = state.FromBytes(blockEntity.State); err != nil {
+		return nil, err
+	}
+
+	transitions := NewTransitions()
+	if err = transitions.FromBytes(blockEntity.Transitions); err != nil {
 		return nil, err
 	}
 
@@ -139,7 +149,8 @@ func (c *Chain) GetBlockByHash(hash Hash) (*Block, error) {
 	}
 
 	tx := NewTransaction(*txEntity.Version, *txEntity.From, *txEntity.Type, *txEntity.Timestamp, txEntity.Content, *txEntity.Hash)
-	block := NewBlock(*blockEntity.Number, state, tx, prevBlockHash)
+	updates := NewUpdatesWithTransitions(tx, transitions)
+	block := NewBlock(*blockEntity.Number, state, updates, prevBlockHash)
 
 	return block, nil
 }
@@ -263,8 +274,14 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 
 	newBlockNumber := c.LastBlockNumber + 1
 
+	// pre-execute transaction
+	updates, err := PreExecuteTransaction(lastState, tx, newBlockNumber)
+	if err != nil {
+		return nil, err
+	}
+
 	// apply transaction
-	newState, err := ExecuteTransaction(lastState, tx, newBlockNumber)
+	newState, err := updates.ApplyTransitions(lastState)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +292,7 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 	}
 
 	// create new block
-	newBlock := NewBlock(newBlockNumber, newState, tx, lastBlock.Hash)
+	newBlock := NewBlock(newBlockNumber, newState, updates, lastBlock.Hash)
 
 	// update chain
 	c.InsertBlock(newBlock)
@@ -298,6 +315,8 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 			return
 		}
 
+		marshaledTransitions, err := updates.Transitions.ToBytes()
+
 		ctx, err := database.DB.BeginTxx(context.Background(), nil)
 		if err != nil {
 			log.Error(err)
@@ -315,12 +334,13 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 		}
 
 		_, err = ctx.Exec(
-			"INSERT INTO blocks (uid, state, block_number, block_hash, tx_hash, prev_block_hash) VALUES (?, ?, ?, ?, ?, ?)",
+			"INSERT INTO blocks (uid, transitions, state, block_number, block_hash, tx_hash, prev_block_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			c.UserId,
+			marshaledTransitions,
 			marshaledState,
 			newBlock.Number,
 			newBlock.Hash,
-			newBlock.Tx.Hash,
+			newBlock.Updates.SrcTx.Hash,
 			newBlock.PrevBlockHash,
 		)
 		if err != nil {

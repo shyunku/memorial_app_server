@@ -18,6 +18,7 @@ type UserEntity struct {
 type BlockEntity struct {
 	UserId        *string `db:"uid" json:"userId"`
 	State         []byte  `db:"state" json:"state"`
+	Transitions   []byte  `db:"transitions" json:"transitions"`
 	Number        *int64  `db:"block_number" json:"blockNumber"`
 	TxHash        *string `db:"tx_hash" json:"txHash"`
 	BlockHash     *string `db:"block_hash" json:"blockHash"`

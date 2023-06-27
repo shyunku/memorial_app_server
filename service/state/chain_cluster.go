@@ -99,6 +99,15 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			return err
 		}
 
+		transitions := NewTransitions()
+		if block.Transitions != nil {
+			// handle only transition-applied blocks
+			if err := transitions.FromBytes(block.Transitions); err != nil {
+				log.Errorf("failed to parse transitions of userId %s: %v", tx.From, err)
+				return err
+			}
+		}
+
 		// find transaction
 		tx, exists := transactions[*block.TxHash]
 		if !exists {
@@ -118,7 +127,8 @@ func (sm *ChainCluster) LoadFromDatabase(db *sqlx.DB) error {
 			}
 		}
 
-		newBlock := NewBlock(blockNumber, newState, tx, prevBlockHash)
+		updates := NewUpdatesWithTransitions(tx, transitions)
+		newBlock := NewBlock(blockNumber, newState, updates, prevBlockHash)
 		chain.InsertBlock(newBlock)
 	}
 

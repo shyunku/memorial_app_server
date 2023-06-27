@@ -53,7 +53,7 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 
 	// check version
 	if request.Version != state.SchemeVersion {
-		log.Errorf("Invalid version: waiting for %s, but %s given", state.SchemeVersion, request.Version)
+		log.Errorf("Invalid version: waiting for %d, but %d given", state.SchemeVersion, request.Version)
 		return nil, fmt.Errorf("invalid version: waiting for %d", state.SchemeVersion)
 	}
 
@@ -114,11 +114,6 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 				log.Warnf("Failed to broadcast waiting block number to user %s [%s]", uid, sock.ConnectionId)
 			}
 
-			// except sender
-			if sock.ConnectionId == socket.ConnectionId {
-				continue
-			}
-
 			// send transaction
 			if err := sock.Emit("broadcast_transaction", newBlock); err != nil {
 				log.Warnf("Failed to broadcast transaction to user %s [%s]", uid, sock.ConnectionId)
@@ -153,7 +148,7 @@ func txHashByBlockNumber(socket *UserSocket, uid string, data interface{}) (inte
 		log.Errorf("Failed to get block: %v", err)
 		return nil, fmt.Errorf("failed to get block: %s", err.Error())
 	}
-	tx := block.Tx
+	tx := block.Updates.SrcTx
 	if tx == nil {
 		log.Errorf("Failed to get transaction from block: %v", block)
 		return nil, fmt.Errorf("failed to get transaction from block: %v", block)
