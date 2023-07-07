@@ -10,7 +10,7 @@ type CreateTaskParams struct {
 	DueDate       int64           `json:"dueDate"`
 	RepeatPeriod  string          `json:"repeatPeriod"`
 	RepeatStartAt int64           `json:"repeatStartAt"`
-	Categories    map[string]bool `json:"Categories"`
+	Categories    map[string]bool `json:"categories"`
 }
 
 type DeleteTaskParams struct {

@@ -426,7 +426,7 @@ func UpdateTaskDone(state *State, tx *Transaction) (*Updates, error) {
 
 		updates.add(OpUpdateTaskDone, &UpdateTaskDoneParams{
 			Id:   body.TaskId,
-			Done: body.Done,
+			Done: false,
 		})
 		updates.add(OpUpdateTaskDoneAt, &UpdateTaskDoneAtParams{
 			Id:     body.TaskId,
