@@ -256,7 +256,7 @@ func (c *Chain) InsertBlock(block *Block) {
 }
 
 // ApplyTransaction applies a transaction to build the new state
-func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
+func (c *Chain) ApplyTransaction(tx *Transaction, blockNumber int64) (*Block, error) {
 	var lastState *State
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -272,7 +272,8 @@ func (c *Chain) ApplyTransaction(tx *Transaction) (*Block, error) {
 		return nil, errors.New("last state is nil")
 	}
 
-	newBlockNumber := c.LastBlockNumber + 1
+	// block number should be last block number + 1, except for initializing
+	newBlockNumber := blockNumber
 
 	// pre-execute transaction
 	updates, err := PreExecuteTransaction(lastState, tx, newBlockNumber)

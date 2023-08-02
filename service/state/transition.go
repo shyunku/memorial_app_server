@@ -14,6 +14,7 @@ var (
 )
 
 const (
+	OpDeleteAll               = 0   // 모든 데이터 삭제
 	OpCreateTask              = 100 // 태스크 생성
 	OpDeleteTask              = 101 // 태스크 삭제
 	OpUpdateTaskNext          = 102 // 태스크 다음 순서 변경
@@ -109,6 +110,8 @@ type Transition struct {
 func (t *Transition) ExecuteTransition(original *State) (*State, error) {
 	state := original.Copy()
 	switch t.Operation {
+	case OpDeleteAll:
+		return t.DeleteAll(state, t.Params)
 	case OpCreateTask:
 		return t.CreateTask(state, t.Params)
 	case OpDeleteTask:
@@ -154,6 +157,12 @@ func (t *Transition) ExecuteTransition(original *State) (*State, error) {
 	default:
 		return nil, fmt.Errorf("unknown operation: %d", t.Operation)
 	}
+}
+
+func (t *Transition) DeleteAll(state *State, params interface{}) (*State, error) {
+	state.Tasks = map[string]Task{}
+	state.Categories = map[string]Category{}
+	return state, nil
 }
 
 func (t *Transition) CreateTask(state *State, params interface{}) (*State, error) {

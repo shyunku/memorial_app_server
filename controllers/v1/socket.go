@@ -59,7 +59,8 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 
 	// check if targetBlockNumber is valid
 	waitingBlockNumber := userChain.GetWaitingBlockNumber()
-	if request.BlockNumber != waitingBlockNumber {
+	initializing := request.Type == state.TxInitialize
+	if !initializing && request.BlockNumber != waitingBlockNumber {
 		// different block number
 		log.Errorf("Invalid target block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.BlockNumber)
 		return nil, fmt.Errorf("invalid block number: waiting for block #%d, but #%d given", waitingBlockNumber, request.BlockNumber)
@@ -79,21 +80,22 @@ func handleTransaction(socket *UserSocket, uid string, data interface{}) (interf
 	//}
 
 	// check block hash (expect)
-	prevBlock, err := userChain.GetBlockByNumber(request.BlockNumber - 1)
-	if err != nil {
-		log.Errorf("Failed to get previous block: %v", err)
-		return nil, fmt.Errorf("failed to get previous block: %s", err.Error())
-	}
-	//log.Debug(prevBlock)
-	prevBlockHash := prevBlock.Hash
-	expectedBlockHash := state.ExpectedBlockHash(request.BlockNumber, request.Hash, prevBlockHash).Hex()
-	if request.BlockHash != expectedBlockHash {
-		log.Errorf("Invalid block hash: expected for %s, but %s given", expectedBlockHash, request.BlockHash)
-		return nil, fmt.Errorf("invalid block hash: waiting for %s, given: %s", expectedBlockHash, request.BlockHash)
-	}
+	//if !initializing {
+	//	prevBlock, err := userChain.GetBlockByNumber(request.BlockNumber - 1)
+	//	if err != nil {
+	//		log.Errorf("Failed to get previous block: %v", err)
+	//		return nil, fmt.Errorf("failed to get previous block: %s", err.Error())
+	//	}
+	//	prevBlockHash := prevBlock.Hash
+	//	expectedBlockHash := state.ExpectedBlockHash(request.BlockNumber, request.Hash, prevBlockHash).Hex()
+	//	if request.BlockHash != expectedBlockHash {
+	//		log.Errorf("Invalid block hash: expected for %s, but %s given", expectedBlockHash, request.BlockHash)
+	//		return nil, fmt.Errorf("invalid block hash: waiting for %s, given: %s", expectedBlockHash, request.BlockHash)
+	//	}
+	//}
 
 	// apply transaction
-	newBlock, err := userChain.ApplyTransaction(tx)
+	newBlock, err := userChain.ApplyTransaction(tx, request.BlockNumber)
 	if err != nil {
 		log.Errorf("Error during applying transaction: %v", err)
 		return nil, fmt.Errorf("failed to apply transaction: %s", err.Error())

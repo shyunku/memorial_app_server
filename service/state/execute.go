@@ -82,14 +82,14 @@ func PreExecuteTransaction(prevState *State, tx *Transaction, newBlockNumber int
 
 func InitializeState(prevState *State, tx *Transaction, newBlockNumber int64) (*Updates, error) {
 	updates := NewUpdates(tx)
-	if newBlockNumber != 1 {
-		return nil, fmt.Errorf("invalid block number for initialize state: %d, expected: 1", newBlockNumber)
-	}
 
 	var body TxInitializeBody
 	if err := util.InterfaceToStruct(tx.Content, &body); err != nil {
 		return nil, err
 	}
+
+	// delete all data from old state
+	updates.add(OpDeleteAll, nil)
 
 	for _, category := range body.Categories {
 		updates.add(OpCreateCategory, &CreateCategoryParams{
@@ -199,6 +199,10 @@ func DeleteTask(state *State, tx *Transaction) (*Updates, error) {
 		return nil, ErrTaskNotFound
 	}
 
+	updates.add(OpDeleteTask, &DeleteTaskParams{
+		Id: body.Id,
+	})
+
 	// update next of previous
 	if dt.Prev != "" {
 		prevTask, ok := state.Tasks[dt.Prev]
@@ -216,10 +220,6 @@ func DeleteTask(state *State, tx *Transaction) (*Updates, error) {
 			Next: state.Tasks[body.Id].Next,
 		})
 	}
-
-	updates.add(OpDeleteTask, &DeleteTaskParams{
-		Id: body.Id,
-	})
 
 	return updates, nil
 }
