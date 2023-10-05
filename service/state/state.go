@@ -4,6 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/awalterschulze/gographviz"
+	"memorial_app_server/util"
+	"strconv"
+	"strings"
 )
 
 // State represents the current state of the application.
@@ -17,6 +21,71 @@ func NewState() *State {
 		Tasks:      make(map[string]Task),
 		Categories: make(map[string]Category),
 	}
+}
+
+// Diagram returns a graphviz diagram of the state as DOT string.
+func (s *State) Diagram() (string, error) {
+	graph := gographviz.NewGraph()
+	graph.Directed = true
+	graph.Attrs = map[gographviz.Attr]string{
+		"rankdir": "TB",
+		"ratio":   "fill",
+	}
+	_ = graph.SetName("G")
+	_ = graph.AddSubGraph("G", "cluster_0", map[string]string{
+		"style":     "filled",
+		"color":     `"#e4e4ff"`,
+		"label":     "Tasks",
+		"fontcolor": "grey",
+	})
+	_ = graph.AddSubGraph("G", "cluster_1", map[string]string{
+		"style":     "filled",
+		"color":     `"#ffe4e4"`,
+		"label":     "Categories",
+		"fontcolor": "grey",
+	})
+
+	// tasks
+	bidirectionalTasks, err := s.SortTasks()
+	if err != nil {
+		return "", err
+	}
+
+	N := func(token string) string {
+		return "node_" + strings.Replace(token, "-", "_", -1)
+	}
+
+	for _, task := range s.Tasks {
+		_ = graph.AddNode("cluster_0", N(task.Id), map[string]string{
+			"label":     strconv.Quote("[" + task.Id[:5] + "] " + util.ClipString(task.Title, 8)),
+			"style":     "filled",
+			"fillcolor": `"#8484ff"`,
+			"fontcolor": `white`,
+		})
+	}
+	for _, task := range bidirectionalTasks {
+		if task.Next != "" {
+			_ = graph.AddEdge(N(task.Id), N(task.Next), true, nil)
+		}
+	}
+
+	for _, category := range s.Categories {
+		_ = graph.AddNode("cluster_1", N(category.Id), map[string]string{
+			"label":     strconv.Quote("[" + category.Id[:5] + "] " + util.ClipString(category.Title, 8)),
+			"style":     "filled",
+			"fillcolor": `"#ff8484"`,
+			"fontcolor": `white`,
+		})
+	}
+
+	// create relation between tasks and categories
+	for _, task := range s.Tasks {
+		for categoryId, _ := range task.Categories {
+			_ = graph.AddEdge(N(task.Id), N(categoryId), true, nil)
+		}
+	}
+
+	return graph.String(), nil
 }
 
 func (s *State) FromBytes(b []byte) error {

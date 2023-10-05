@@ -3,7 +3,6 @@ package v1
 import (
 	"encoding/json"
 	"github.com/gorilla/websocket"
-	"memorial_app_server/log"
 	"sync"
 )
 
@@ -52,9 +51,9 @@ func NewUserSocket(connectionId string, conn *websocket.Conn, emitter UserSocket
 }
 
 func (s *UserSocket) Emit(topic string, data interface{}) error {
-	log.Debug("emit -> ", topic, data)
-	s.connMutex.Lock()
-	defer s.connMutex.Unlock()
+	//log.Debug("emit -> ", topic, data)
+	//s.connMutex.Lock()
+	//defer s.connMutex.Unlock()
 	return s.Emitter(s, topic, data)
 }
 
