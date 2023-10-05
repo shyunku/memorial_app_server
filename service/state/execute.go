@@ -356,10 +356,18 @@ func UpdateTaskDueDate(state *State, tx *Transaction) (*Updates, error) {
 		return nil, err
 	}
 
-	_, ok := state.Tasks[body.Id]
+	task, ok := state.Tasks[body.Id]
 	if !ok {
 		log.Warnf("updating dueDate task(%s) not found", body.Id)
 		return nil, ErrStateMismatch
+	}
+
+	// if repeat period exists, update repeat start at to due date (to update)
+	if task.RepeatPeriod != "" {
+		updates.add(OpUpdateTaskRepeatStartAt, &UpdateTaskRepeatStartAtParams{
+			Id:            body.Id,
+			RepeatStartAt: body.DueDate,
+		})
 	}
 
 	updates.add(OpUpdateTaskDueDate, &UpdateTaskDueDateParams{
@@ -403,6 +411,22 @@ func UpdateTaskDone(state *State, tx *Transaction) (*Updates, error) {
 	}
 
 	if task.RepeatPeriod != "" {
+		// create clone of this task with done and save
+		// with repeat deletion
+		doneTask := task.CopyNew()
+		updates.add(OpCreateTask, &CreateTaskParams{
+			Id:            doneTask.Id,
+			Title:         doneTask.Title,
+			CreatedAt:     doneTask.CreatedAt,
+			DoneAt:        doneTask.DoneAt,
+			Memo:          doneTask.Memo,
+			Done:          true,
+			DueDate:       doneTask.DueDate,
+			RepeatPeriod:  "",
+			RepeatStartAt: 0,
+			Categories:    doneTask.Categories,
+		})
+
 		repeatStartAt := task.RepeatStartAt
 		if repeatStartAt == 0 {
 			repeatStartAt = task.DueDate
@@ -434,8 +458,39 @@ func UpdateTaskDone(state *State, tx *Transaction) (*Updates, error) {
 		})
 		updates.add(OpUpdateTaskDueDate, &UpdateTaskDueDateParams{
 			Id:      body.TaskId,
-			DueDate: nextDueDate.UnixNano() / int64(time.Millisecond),
+			DueDate: nextDueDate.UnixMilli(),
 		})
+
+		// calculate difference between task due date and next due date
+		dueDateTime := time.UnixMilli(task.DueDate)
+		diffTime := nextDueDate.Sub(dueDateTime)
+
+		// update subtasks done & due date
+		for sid, subtask := range task.Subtasks {
+			// set done as false
+			updates.add(OpUpdateSubtaskDone, &UpdateSubtaskDoneParams{
+				Id:        body.TaskId,
+				SubtaskId: sid,
+				Done:      false,
+			})
+			updates.add(OpUpdateSubtaskDoneAt, &UpdateSubtaskDoneAtParams{
+				Id:        body.TaskId,
+				SubtaskId: sid,
+				DoneAt:    0,
+			})
+
+			// update subtasks due date
+			subtaskDueDate := subtask.DueDate
+			if subtaskDueDate != 0 {
+				subtaskDueDateTime := time.UnixMilli(subtaskDueDate)
+				newSubtaskDueDateTime := subtaskDueDateTime.Add(diffTime)
+				updates.add(OpUpdateSubtaskDueDate, &UpdateSubtaskDueDateParams{
+					Id:        body.TaskId,
+					SubtaskId: sid,
+					DueDate:   newSubtaskDueDateTime.UnixMilli(),
+				})
+			}
+		}
 	} else {
 		updates.add(OpUpdateTaskDone, &UpdateTaskDoneParams{
 			Id:   body.TaskId,
@@ -471,6 +526,7 @@ func UpdateTaskRepeatPeriod(state *State, tx *Transaction) (*Updates, error) {
 	// update repeat period start time
 	repeatStartAt := task.RepeatStartAt
 	if repeatStartAt == 0 {
+		// if start at is not set, set to due date if possible
 		repeatStartAt = task.DueDate
 		if repeatStartAt != 0 {
 			task.RepeatStartAt = repeatStartAt

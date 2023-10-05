@@ -1,5 +1,7 @@
 package state
 
+import "github.com/google/uuid"
+
 type Task struct {
 	Id            string `json:"tid"`
 	Title         string `json:"title"`
@@ -32,6 +34,35 @@ func (t *Task) Copy() *Task {
 	task.Subtasks = make(map[string]Subtask)
 	for k, v := range t.Subtasks {
 		task.Subtasks[k] = *v.Copy()
+	}
+	task.Categories = make(map[string]bool)
+	for k, v := range t.Categories {
+		task.Categories[k] = v
+	}
+
+	return task
+}
+
+// CopyNew creates clone with other task ID (and subordinates tasks)
+func (t *Task) CopyNew() *Task {
+	newTaskId := uuid.New().String()
+	task := &Task{
+		Id:            newTaskId,
+		Title:         t.Title,
+		CreatedAt:     t.CreatedAt,
+		DoneAt:        t.DoneAt,
+		Memo:          t.Memo,
+		Done:          t.Done,
+		DueDate:       t.DueDate,
+		Next:          t.Next,
+		RepeatPeriod:  t.RepeatPeriod,
+		RepeatStartAt: t.RepeatStartAt,
+	}
+	task.Subtasks = make(map[string]Subtask)
+	for _, v := range t.Subtasks {
+		newSubtask := v.Copy()
+		newSubtask.Id = uuid.New().String()
+		task.Subtasks[newSubtask.Id] = *newSubtask
 	}
 	task.Categories = make(map[string]bool)
 	for k, v := range t.Categories {
