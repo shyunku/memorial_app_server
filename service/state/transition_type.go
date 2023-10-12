@@ -7,6 +7,7 @@ type CreateTaskParams struct {
 	DoneAt        int64           `json:"doneAt"`
 	Memo          string          `json:"memo"`
 	Done          bool            `json:"done"`
+	StartDate     *int64          `json:"startDate"`
 	DueDate       int64           `json:"dueDate"`
 	RepeatPeriod  string          `json:"repeatPeriod"`
 	RepeatStartAt int64           `json:"repeatStartAt"`

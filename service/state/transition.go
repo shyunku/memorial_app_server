@@ -178,6 +178,7 @@ func (t *Transition) CreateTask(state *State, params interface{}) (*State, error
 		DoneAt:        data.DoneAt,
 		Memo:          data.Memo,
 		Done:          data.Done,
+		StartDate:     data.StartDate,
 		DueDate:       data.DueDate,
 		RepeatPeriod:  data.RepeatPeriod,
 		RepeatStartAt: data.RepeatStartAt,

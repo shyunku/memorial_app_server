@@ -9,6 +9,7 @@ type Task struct {
 	DoneAt        int64  `json:"doneAt"`
 	Memo          string `json:"memo"`
 	Done          bool   `json:"done"`
+	StartDate     *int64 `json:"startDate"`
 	DueDate       int64  `json:"dueDate"`
 	Next          string `json:"next"`
 	RepeatPeriod  string `json:"repeatPeriod"`
@@ -26,6 +27,7 @@ func (t *Task) Copy() *Task {
 		DoneAt:        t.DoneAt,
 		Memo:          t.Memo,
 		Done:          t.Done,
+		StartDate:     t.StartDate,
 		DueDate:       t.DueDate,
 		Next:          t.Next,
 		RepeatPeriod:  t.RepeatPeriod,
@@ -53,6 +55,7 @@ func (t *Task) CopyNew() *Task {
 		DoneAt:        t.DoneAt,
 		Memo:          t.Memo,
 		Done:          t.Done,
+		StartDate:     t.StartDate,
 		DueDate:       t.DueDate,
 		Next:          t.Next,
 		RepeatPeriod:  t.RepeatPeriod,
