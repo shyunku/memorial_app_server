@@ -371,8 +371,10 @@ func SocketV1(c *gin.Context) {
 			return err
 		}
 
+		socket.connMutex.Lock()
+		defer socket.connMutex.Unlock()
 		// write out a message
-		if err := conn.WriteMessage(websocket.BinaryMessage, sendMessage); err != nil {
+		if err := socket.Conn.WriteMessage(websocket.BinaryMessage, sendMessage); err != nil {
 			log.Error("Error during writing message: ", err)
 			return err
 		}
@@ -441,10 +443,13 @@ func SocketV1(c *gin.Context) {
 		}
 
 		// write out a message
-		if err := conn.WriteMessage(msgType, sendMessage); err != nil {
+		socket.connMutex.Lock()
+		if err := socket.Conn.WriteMessage(msgType, sendMessage); err != nil {
+			socket.connMutex.Unlock()
 			log.Error("Error during writing message: ", err)
 			continue
 		}
+		socket.connMutex.Unlock()
 	}
 }
 

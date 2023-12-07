@@ -219,6 +219,8 @@ func DeleteTask(state *State, tx *Transaction) (*Updates, error) {
 			Id:   prevTask.Id,
 			Next: state.Tasks[body.Id].Next,
 		})
+
+		log.Debug("prevTask.Id: ", prevTask.Id)
 	}
 
 	return updates, nil
@@ -425,6 +427,26 @@ func UpdateTaskDone(state *State, tx *Transaction) (*Updates, error) {
 			RepeatPeriod:  "",
 			RepeatStartAt: 0,
 			Categories:    doneTask.Categories,
+		})
+
+		// update task order
+		bidirectionalTasks, err := state.SortTasks()
+		if err != nil {
+			return nil, err
+		}
+
+		prevTaskId := bidirectionalTasks[task.Id].Prev
+
+		// set new task order
+		if prevTaskId != "" {
+			updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+				Id:   prevTaskId,
+				Next: doneTask.Id,
+			})
+		}
+		updates.add(OpUpdateTaskNext, &UpdateTaskNextParams{
+			Id:   doneTask.Id,
+			Next: task.Id,
 		})
 
 		repeatStartAt := task.RepeatStartAt
