@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const VERSION = "0.3.1"
+const VERSION = "1.0.1"
 
 var DebugMode = false
 
